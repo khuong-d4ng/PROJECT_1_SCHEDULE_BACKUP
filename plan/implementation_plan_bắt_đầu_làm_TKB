@@ -1,0 +1,162 @@
+# Bảng TKB Trung tâm — Xếp Môn Học Theo Kì
+
+## Mục tiêu
+
+Xây dựng chức năng **xếp thời khóa biểu** cho 1 lớp trong 1 kì nhất định. Người dùng sẽ:
+1. Chọn Ngành → Khóa → Kì → Lớp (cascading selectors)
+2. Kéo-thả (drag & drop) các môn học từ "pool môn chưa dùng" vào kì đã chọn
+3. Lưu kết quả (những môn nào thuộc kì nào của lớp nào)
+
+> [!NOTE]
+> Đây là **bước 1** của tab TKB Trung tâm. Bước tiếp theo (sẽ làm sau) là xếp buổi dạy thực tế (gán giảng viên + ca/ngày trong tuần).
+
+---
+
+## Dữ liệu hardcode (tạm thời)
+
+| Thực thể | Giá trị cố định |
+|---|---|
+| **Ngành** (Major) | `CNTT`, `HTTT`, `KHMT` |
+| **Khóa** (Batch) | `19` |
+| **Kì** (Semester) | `1` → `10` |
+| **Lớp** (Class) | 6 lớp/ngành, mã = `{Ngành}-19{01..06}`. VD: `CNTT-1901`, `HTTT-1903`, `KHMT-1906` |
+
+---
+
+## Proposed Changes
+
+### Backend — New Model: `ClassSemesterSubject`
+
+#### [NEW] [class_semester_subjects.py](file:///D:/.PROJECT_1/backend/app/api/endpoints/class_semester_subjects.py)
+
+Tạo API endpoint mới quản lý việc gán môn học vào kì-lớp:
+
+| Method | Path | Mô tả |
+|---|---|---|
+| `GET` | `/api/class-semester-subjects/?class_code=CNTT-1901&semester_index=3` | Lấy danh sách môn đang gắn vào kì 3 của lớp CNTT-1901 |
+| `GET` | `/api/class-semester-subjects/used?class_code=CNTT-1901` | Lấy tất cả subject_id đã dùng ở mọi kì của lớp này (để loại khỏi pool) |
+| `POST` | `/api/class-semester-subjects/save` | Lưu (replace) toàn bộ môn cho 1 cặp (class_code, semester_index) |
+
+---
+
+#### [MODIFY] [models.py](file:///D:/.PROJECT_1/backend/app/models.py)
+
+Thêm model mới `ClassSemesterSubject`:
+
+```python
+class ClassSemesterSubject(Base):
+    __tablename__ = "class_semester_subjects"
+    id = Column(Integer, primary_key=True, index=True)
+    class_code = Column(String(20), nullable=False)       # VD: "CNTT-1901"
+    semester_index = Column(Integer, nullable=False)       # 1..10
+    subject_id = Column(Integer, ForeignKey("subjects.subject_id"), nullable=False)
+    
+    subject = relationship("Subject")
+```
+
+> [!IMPORTANT]
+> **Thiết kế `class_code` + `semester_index`** thay vì dùng FK tới bảng `classes`/`semesters` hiện tại.
+> 
+> **Lý do:** Bảng `semesters` hiện tại lưu các **kì học thật** (có ngày bắt đầu/kết thúc, trạng thái) — mang nghĩa "kì tổ chức lịch dạy". Còn ở đây, "kì" chỉ là **thứ tự kì trong chương trình đào tạo** (kì 1 → kì 10). Hai khái niệm khác nhau nên tách ra. `class_code` cũng được dùng dạng string đơn giản vì các lớp đang hardcode, chưa cần FK phức tạp.
+
+---
+
+#### [MODIFY] [schemas.py](file:///D:/.PROJECT_1/backend/app/schemas.py)
+
+Thêm schemas mới:
+
+```python
+class ClassSemesterSubjectItem(BaseModel):
+    subject_id: int
+    subject_code: str
+    subject_name: str
+    credits: int
+
+class ClassSemesterSubjectSavePayload(BaseModel):
+    class_code: str          # "CNTT-1901"
+    semester_index: int      # 1..10
+    subject_ids: List[int]   # Danh sách môn được gán
+```
+
+---
+
+#### [MODIFY] [api_router.py](file:///D:/.PROJECT_1/backend/app/api/api_router.py)
+
+Đăng ký router mới cho `class_semester_subjects`.
+
+---
+
+#### [NEW] Alembic migration
+
+Tạo migration cho bảng `class_semester_subjects`.
+
+---
+
+### Frontend — TimetablePage
+
+#### [NEW] [TimetablePage.tsx](file:///D:/.PROJECT_1/frontend/src/pages/TimetablePage.tsx)
+
+Trang mới với layout:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Toolbar: [Ngành ▼]  [Khóa ▼]  [Kì ▼]  [Lớp ▼]    [Lưu]      │
+├──────────────────────────────────┬───────────────────────────────┤
+│                                  │                               │
+│   Panel "Kì X — Lớp CNTT-1901"  │      Pool Môn Học             │
+│                                  │      (chưa dùng ở kì nào)    │
+│   ┌──────────┐ ┌──────────┐     │                               │
+│   │  Môn A   │ │  Môn C   │     │   ┌──────────┐               │
+│   └──────────┘ └──────────┘     │   │  Môn B   │  ← kéo vào   │
+│   ┌──────────┐                   │   └──────────┘               │
+│   │  Môn D   │                   │   ┌──────────┐               │
+│   └──────────┘                   │   │  Môn E   │               │
+│                                  │   └──────────┘               │
+│   (drop zone — kéo môn vào đây) │   ...                         │
+│                                  │   Tìm kiếm: [________]      │
+└──────────────────────────────────┴───────────────────────────────┘
+```
+
+**Luồng hoạt động:**
+1. Chọn Ngành → dropdown Khóa tự filter → chọn Khóa → dropdown Kì → chọn Kì → dropdown Lớp tự sinh danh sách lớp (6 lớp)
+2. Khi đủ 4 selector → gọi 2 API:
+   - Lấy môn đã gắn vào kì này (`GET /class-semester-subjects/?class_code=...&semester_index=...`)
+   - Lấy toàn bộ subject_id đã dùng ở mọi kì khác (`GET /class-semester-subjects/used?class_code=...`)
+3. Pool = tất cả môn học − các môn đã dùng ở kì khác
+4. Kéo môn từ Pool → Panel kì → môn biến mất khỏi pool, xuất hiện trong panel
+5. Có thể kéo ngược (gỡ) môn từ panel → pool
+6. Bấm "Lưu" → `POST /class-semester-subjects/save`
+
+**Drag & Drop:** Sử dụng `@dnd-kit/core` đã có sẵn trong package.json.
+
+---
+
+#### [MODIFY] [App.tsx](file:///D:/.PROJECT_1/frontend/src/App.tsx)
+
+- Import `TimetablePage`
+- Thêm `<Route path="/timetable" element={<TimetablePage />} />`
+
+---
+
+## Open Questions
+
+> [!IMPORTANT]
+> 1. **Pool môn học chung hay riêng theo ngành?** Hiện tại tôi sẽ để pool chung (tất cả môn trong DB), vì danh mục chương trình đào tạo theo ngành chưa được xây dựng. Bạn có muốn filter theo ngành không?
+> 2. **Khi xóa môn khỏi kì, có cần confirm dialog không?** Tôi dự định cho kéo ngược trực tiếp (không confirm) vì vẫn phải bấm "Lưu" mới commit.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+1. Chạy `alembic upgrade head` thành công
+2. Backend khởi động không lỗi
+3. Frontend build không lỗi
+
+### Manual Verification (Browser)
+1. Mở tab "Bảng TKB Trung tâm"
+2. Chọn Ngành CNTT → Khóa 19 → Kì 1 → Lớp CNTT-1901
+3. Kéo 1 môn từ pool vào panel → môn biến mất khỏi pool → xuất hiện trong panel
+4. Bấm Lưu → refresh trang → môn vẫn hiển thị đúng
+5. Chuyển sang Kì 2 → môn đã gán ở Kì 1 không xuất hiện trong pool
+6. Quay lại Kì 1 → môn vẫn hiển thị đúng trong panel

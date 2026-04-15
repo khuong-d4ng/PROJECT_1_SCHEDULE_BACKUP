@@ -1,0 +1,116 @@
+{
+  "task_description": "Xếp giảng viên dạy các môn học cho các lớp dựa trên dữ liệu từ hai file Excel",
+  "files": {
+    "file_A": {
+      "filename": "Nguyện_vọng_dạy_của_giảng_viên.xlsx",
+      "description": "Danh sách học phần và giảng viên có khả năng dạy",
+      "columns": [
+        {
+          "name": "Tên học phần",
+          "description": "Tên các học phần mà các giảng viên ở cùng dòng có thể dạy"
+        },
+        {
+          "name": "Giảng viên chính",
+          "description": "Tên các giảng viên chính có khả năng dạy học phần đó"
+        },
+        {
+          "name": "Giảng viên thực hành",
+          "description": "Tên các giảng viên thực hành có khả năng dạy học phần đó"
+        }
+      ]
+    },
+    "file_B": {
+      "filename": "TKB_Chua_Xep",
+      "description": "Thời khóa biểu cần xếp giảng viên và ngày học",
+      "columns": [
+	
+        {
+          "name": "stt",
+          "description": "cột này nhằm đánh số thứ tự các bản ghi, đảm bảo trước và sau khi thêm giảng viên thứ tự các lớp không thay đổi."
+        },
+        {
+          "name": "Tên lớp",
+          "description": "Tên lớp, bắt đầu bằng 4 chữ cái (mã lớp), theo sau là 4 chữ số dạng 1x y-y (1x: niên khóa, yy: mã lớp). Một tên lớp có thể xuất hiện nhiều lần (mỗi lần gắn với một môn học và giảng viên khác nhau), không phải lỗi."
+        },
+        {
+          "name": "Buổi cố định",
+          "description": "Chỉ chứa 'Sáng' hoặc 'Chiều'. Quy định môn học phải được dạy vào buổi sáng hoặc buổi chiều trong tuần."
+        },
+        {
+          "name": "Tên học phần",
+          "description": "Tên học phần, dùng để tra cứu giảng viên phù hợp từ file A"
+        },
+	{
+          "name": "Số tiết",
+          "description": "Số tiết của môn học, là căn cứ để xếp giảng viên không được dưới 160 tiết"
+        },
+        {
+          "name": "Giảng viên dạy",
+          "description": "Hiện đang trống. Cần điền tên giảng viên chính hoặc dự phòng phù hợp."
+        },
+        {
+          "name": "Giảng viên thực hành",
+          "description": "Chỉ điền tên giảng viên nằm trong cột 'Giảng viên thực hành' của file A. Được phép để trống nếu môn không có giảng viên thực hành phù hợp."
+        },
+        {
+          "name": "Thứ-Sáng",
+          "description": "Chỉ điền nếu 'Buổi cố định' là 'Sáng'. Định dạng: S-Ty (y từ 2 đến 7)"
+        },
+        {
+          "name": "Thứ-Chiều",
+          "description": "Chỉ điền nếu 'Buổi cố định' là 'Chiều'. Định dạng: C-Ty (y từ 2 đến 7)"
+        }
+      ]
+    }
+  },
+  "objective": "Căn cứ dữ liệu từ file A và file B để xếp giảng viên dạy các môn học ở các lớp, đồng thời điền ngày học (Thứ-Sáng / Thứ-Chiều) phù hợp.",
+  "output_requirement": {
+    "description": "Kết quả đầu ra là một file Excel (.xlsx) có cấu trúc y hệt file B 'TKB Chưa xếp'",
+    "details": [
+      "Giữ nguyên toàn bộ: số lượng cột, tên cột, thứ tự cột, số lượng hàng, thứ tự hàng, và toàn bộ dữ liệu gốc trong các cột đã có sẵn",
+      "Chỉ thêm mới / điền thông tin vào các cột sau:",
+      "- Cột 'Giảng viên dạy': điền tên giảng viên được phân công (có thể nhiều tên cách nhau bởi dấu phẩy hoặc theo quy ước phù hợp nếu có cả giảng viên chính và thực hành)",
+      "- Cột 'Giảng viên thực hành': điền tên giảng viên thực hành nếu có và phù hợp",
+      "- Cột 'Thứ-Sáng': điền giá trị theo định dạng S-Ty nếu buổi cố định là Sáng",
+      "- Cột 'Thứ-Chiều': điền giá trị theo định dạng C-Ty nếu buổi cố định là Chiều",
+      "Không được thay đổi, xóa, thêm hàng, thêm cột, đổi tên cột, hoặc sửa bất kỳ dữ liệu gốc nào trong các cột 1, 2, 3"
+    ]
+  },
+  "rules": {
+    "class_naming": {
+      "description": "Tên lớp bắt đầu bằng 4 chữ cái (mã lớp), theo sau là 4 chữ số dạng 1x y-y (1x: niên khóa, yy: mã lớp)"
+    },
+    "general_rules": [
+      "Các lớp khác khóa (niên khóa khác nhau) có thể học trùng ngày/giờ mà không xung đột, ví dụ: CNTT 17-02 học sáng thứ 2 không ảnh hưởng đến CNTT 18-02 học sáng thứ 2.",
+      "TUY NHIÊN PHẢI KHÔNG ĐƯỢC TRÙNG GIẢNG VIÊN trong cùng một khung thời gian (buổi + thứ).",
+      "Ngày dạy được điền vào cột Thứ-Sáng hoặc Thứ-Chiều dựa trên giá trị cột 'Buổi cố định': nếu 'Sáng' → điền cột 6, nếu 'Chiều' → điền cột 7.",
+      "Định dạng ngày: x-Ty với x = S (cột Thứ-Sáng) hoặc C (cột Thứ-Chiều), y từ 2 đến 7."
+    ],
+    "scheduling_rules": [
+      "Buổi học phải tuân thủ nghiêm ngặt cột 'Buổi cố định': nếu là 'Chiều' thì chỉ được điền vào cột Thứ-Chiều (C-Ty), không được điền vào cột Thứ-Sáng.",
+      "Một lớp không được có hai môn học trùng nhau về buổi + thứ (ví dụ: không thể có hai môn cùng S-T2).",
+      "Các môn 'Tiếng Anh 4' và 'Tiếng Anh 2' đã được gắn cố định ngày học → không được thay đổi. Các môn khác phải được xếp sao cho không xung đột với hai môn Tiếng Anh này."
+    ],
+    "lecturer_rules": [
+      "Giảng viên dạy môn đó bắt buộc phải nằm trong danh sách có khả năng dạy môn đó theo file A (cột tương ứng).",
+      "Một giảng viên KHÔNG ĐƯỢC dạy hai môn (ở hai lớp khác nhau) trong cùng một khung thời gian (cùng buổi + thứ), ví dụ: không được có hai dòng nào trong toàn bộ bảng có cùng giá trị S-T2 cho cùng một giảng viên.",
+      "Nếu giảng viên đã được phân S-T2 thì không được phân thêm bất kỳ môn nào khác vào S-T2 (dù lớp khác).",
+      "Một giảng viên không được dạy quá 3 môn học/học phần.",
+      "Một giảng viên không được dạy quá 10 lớp.",
+	"Một giảng viên phải dạy tối thiểu 160 tiết (tính bằng cách cộng số tiết của các buổi mà giảng viên dạy (tính thông qua số buổi, không tính thông qua số môn vì cùng 1 môn có thể dạy các lớp khác nhau).",
+	"Giảng viên chính thì tính số tiết chuẩn",
+	"Giảng viên thực hành tạm thời không cần tính số tiết"
+    ],
+    "priority_rules": [
+      "Ưu tiên xếp Giảng viên chính trước.",
+      "Giảng viên thực hành được xếp cùng với giảng viên chính (có thể đồng thời): ví dụ môn có Giảng viên chính: Nguyễn Văn A, Giảng viên thực hành: Nguyễn Văn B → có thể xếp cả A và B cùng dạy môn đó.",
+      "Ưu tiên cao nhất: Nếu không còn giảng viên chính phù hợp, hãy điền "Hết giảng viên chính khả dụng" vào ô Tên giảng viên thay vì cố gắng phá luật,
+	"Ưu tiên cao 1: Các giảng viên phải có tối thiểu 160 tiết trong thời khóa biểu.",
+	"Ưu tiên cao 2: Các giảng viên không được quá 250 tiết trong tổng thời khóa biểu.",
+      "Ưu tiên thấp 1: Cố gắng phân bổ số buổi dạy của các giảng viên sao cho đều nhau nhất có thể.",
+	"Ưu tiên thấp 2: Không nên để 1 giảng viên dạy cùng 1 môn ở 6 lớp, vẫn có thể nếu không còn cách nào khác nhưng cần note vào file sumary"
+    ],
+	"output kèm theo": [
+	"Output ngoài file TKB đã xếp thì kèm theo 1 file xlsx sumary, tổng hợp các chi tiết về tkb"
+  }
+}

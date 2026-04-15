@@ -1,0 +1,319 @@
+# Bảng TKB Trung tâm — Đợt Xếp Lịch (v2)
+
+## 1. Tổng quan luồng hoạt động
+
+```
+Bước 1: Tạo "Đợt xếp lịch" (VD: HK2 2025-2026)
+   ↓
+Bước 2: Thêm các entries:
+   ├── CNTT K19 → Kì 4
+   ├── CNTT K18 → Kì 6
+   ├── KHMT K19 → Kì 4
+   └── ...
+   ↓
+Bước 3: Chọn Registration List (nguồn nguyện vọng GV)
+   ↓
+Bước 4: Bấm "Tạo bảng TKB" → Hệ thống sinh toàn bộ rows
+   ↓
+Bước 5: Bảng TKB hiển thị (table lớn + pool GV bên phải)
+   ├── Option A: Bấm "Tự động xếp lịch" → engine chạy
+   └── Option B: Kéo thả GV từ pool vào từng dòng (thủ công)
+   ↓
+Bước 6: Các dòng chưa xếp được → bôi đỏ cảnh báo
+   ↓
+Bước 7: Lưu / Export Excel
+```
+
+---
+
+## 2. Backend — Models
+
+### [MODIFY] [models.py](file:///D:/.PROJECT_1/backend/app/models.py)
+
+#### Model `SchedulingSession` — Đợt xếp lịch
+
+```python
+class SchedulingSession(Base):
+    __tablename__ = "scheduling_sessions"
+    id = Column(Integer, primary_key=True)
+    name = Column(String(200), nullable=False)            # "HK2 2025-2026"
+    registration_list_id = Column(Integer, 
+        ForeignKey("registration_lists.list_id"), nullable=True)  # Nguồn nguyện vọng
+    created_at = Column(Date, default=datetime.utcnow)
+    
+    entries = relationship("SessionEntry", back_populates="session", 
+                          cascade="all, delete-orphan")
+    rows = relationship("TimetableRow", back_populates="session",
+                       cascade="all, delete-orphan")
+    registration_list = relationship("RegistrationList")
+```
+
+#### Model `SessionEntry` — Mỗi bộ (ngành, khóa, kì) trong đợt
+
+```python
+class SessionEntry(Base):
+    __tablename__ = "session_entries"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, 
+        ForeignKey("scheduling_sessions.id", ondelete="CASCADE"), nullable=False)
+    major_code = Column(String(20), nullable=False)   # "CNTT"
+    batch_code = Column(String(10), nullable=False)    # "19"
+    semester_index = Column(Integer, nullable=False)   # 4
+    num_classes = Column(Integer, nullable=False, default=6)  # Số lớp khóa này
+    
+    session = relationship("SchedulingSession", back_populates="entries")
+```
+
+#### Model `TimetableRow` — Mỗi dòng trong bảng TKB
+
+```python
+class TimetableRow(Base):
+    __tablename__ = "timetable_rows"
+    id = Column(Integer, primary_key=True)
+    session_id = Column(Integer, 
+        ForeignKey("scheduling_sessions.id", ondelete="CASCADE"), nullable=False)
+    
+    # Thông tin lớp
+    row_index = Column(Integer, nullable=False)               # STT
+    class_name = Column(String(30), nullable=False)           # "CNTT 19-01"
+    shift = Column(String(10), nullable=False, default="Sáng") # "Sáng" / "Chiều"
+    
+    # Thông tin môn
+    subject_code = Column(String(30), nullable=True)
+    subject_name = Column(String(200), nullable=False)
+    credits = Column(Integer, nullable=True)
+    theory_hours = Column(Integer, nullable=True)
+    practice_hours = Column(Integer, nullable=True)
+    room_type = Column(String(50), nullable=True)             # "Phòng thường"/"Phòng máy"
+    
+    # Kết quả xếp lịch (engine hoặc thủ công điền)
+    lecturer_name = Column(String(200), nullable=True)        # GV chính
+    practice_lecturer_name = Column(String(200), nullable=True) # GV thực hành
+    day_morning = Column(String(10), nullable=True)           # "S-T2"
+    day_afternoon = Column(String(10), nullable=True)         # "C-T3"
+    
+    session = relationship("SchedulingSession", back_populates="rows")
+```
+
+---
+
+## 3. Backend — API Endpoints
+
+### [NEW] [timetable.py](file:///D:/.PROJECT_1/backend/app/api/endpoints/timetable.py)
+
+#### Quản lý Đợt xếp lịch
+
+| Method | Path | Mô tả |
+|---|---|---|
+| `GET` | `/api/timetable/sessions` | Danh sách đợt xếp lịch |
+| `POST` | `/api/timetable/sessions` | Tạo đợt mới (name) |
+| `DELETE` | `/api/timetable/sessions/{id}` | Xóa đợt |
+| `PUT` | `/api/timetable/sessions/{id}` | Cập nhật (name, registration_list_id) |
+
+#### Quản lý Entries trong đợt
+
+| Method | Path | Mô tả |
+|---|---|---|
+| `GET` | `/api/timetable/sessions/{id}/entries` | Danh sách entries |
+| `POST` | `/api/timetable/sessions/{id}/entries` | Thêm entry (major, batch, semester_index, num_classes) |
+| `DELETE` | `/api/timetable/sessions/{id}/entries/{entry_id}` | Xóa entry |
+
+#### Sinh bảng + Xếp lịch
+
+| Method | Path | Mô tả |
+|---|---|---|
+| `POST` | `/api/timetable/sessions/{id}/generate` | Sinh toàn bộ TimetableRow từ entries |
+| `GET` | `/api/timetable/sessions/{id}/rows` | Lấy bảng TKB (tất cả rows) |
+| `POST` | `/api/timetable/sessions/{id}/auto-schedule` | Chạy engine tự động |
+| `PUT` | `/api/timetable/rows/{row_id}` | Cập nhật 1 dòng (thủ công) |
+| `POST` | `/api/timetable/sessions/{id}/save` | Lưu bulk thay đổi |
+| `GET` | `/api/timetable/sessions/{id}/export` | Export Excel |
+
+---
+
+## 4. Backend — Auto-Scheduling Engine
+
+### [NEW] [scheduler.py](file:///D:/.PROJECT_1/backend/app/core/scheduler.py)
+
+**Input:**
+- `List[TimetableRow]` — tất cả rows trong session (mọi ngành/khóa)
+- `List[LecturerRegistration]` — từ Registration List đã chọn
+
+**Thuật toán (Greedy + Constraint):**
+
+```
+INIT:
+  gv_slots = {}       # gv_name → Set["S-T2", "C-T5", ...]
+  gv_subjects = {}    # gv_name → Set[subject_names] (max 3)
+  gv_classes = {}     # gv_name → count (max 10)
+  gv_hours = {}       # gv_name → total tiết
+  class_slots = {}    # class_name → Set["S-T2", ...]
+
+SORT rows: ưu tiên rows có ít GV khả dụng trước (hardest first)
+
+FOR each row:
+  1. Lấy GV chính có thể dạy môn này (từ registrations)
+  2. Filter: chưa đạt max 3 môn, max 10 lớp
+  3. Sort theo ưu tiên:
+     - GV chưa đạt 160 tiết → ưu tiên cao
+     - GV có ÍT tiết nhất → cân bằng tải
+     - GV chưa quá 250 tiết
+  4. FOR each GV candidate:
+       Tìm slot trống phù hợp:
+         slots = ["S-T2".."S-T7"] nếu shift="Sáng"
+                  hoặc ["C-T2".."C-T7"] nếu shift="Chiều"
+         FOR each slot:
+           IF slot not in gv_slots[gv] 
+              AND slot not in class_slots[class_name]:
+             → GÁN: row.lecturer = gv, row.day = slot
+             → CẬP NHẬT trackers
+             → BREAK
+       IF assigned → BREAK
+  5. IF not assigned:
+       row.lecturer = "Hết GV chính khả dụng"
+
+  6. Lặp tương tự cho GV thực hành (nếu môn có TH)
+```
+
+**Ràng buộc cứng:**
+- ❌ GV KHÔNG trùng slot (cùng buổi + thứ) — **xuyên suốt mọi ngành/khóa**
+- ❌ Lớp KHÔNG trùng slot (2 môn cùng S-T2)
+- ❌ GV phải nằm trong nguyện vọng
+- ❌ GV ≤ 3 môn, ≤ 10 lớp
+
+**Ràng buộc mềm:**
+- ⚠️ GV ≥ 160 tiết (ưu tiên chưa đạt)
+- ⚠️ GV ≤ 250 tiết
+- ⚠️ Phân bổ đều
+- ⚠️ Tránh 1 GV dạy 1 môn ở 6 lớp
+
+---
+
+## 5. Frontend — Trang TKB Trung tâm
+
+### [NEW] [TimetableCenterPage.tsx](file:///D:/.PROJECT_1/frontend/src/pages/TimetableCenterPage.tsx)
+
+**Gồm 2 mode:**
+
+### Mode 1: Chọn/Tạo Đợt Xếp Lịch (khi chưa có rows)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│ Đợt xếp lịch: [Dropdown chọn đợt ▼]  [+ Tạo đợt mới]     │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│ Cấu hình đợt: "HK2 2025-2026"                              │
+│                                                             │
+│ Nguồn nguyện vọng: [Chọn Registration List ▼]              │
+│                                                             │
+│ Danh sách ngành/khóa:                                       │
+│ ┌───────────┬────────┬──────┬──────────┬─────────┐         │
+│ │ Ngành     │ Khóa   │ Kì   │ Số lớp   │ Xóa     │         │
+│ ├───────────┼────────┼──────┼──────────┼─────────┤         │
+│ │ CNTT      │ 19     │ 4    │ 10       │ 🗑      │         │
+│ │ CNTT      │ 18     │ 6    │ 13       │ 🗑      │         │
+│ │ KHMT      │ 19     │ 4    │  1       │ 🗑      │         │
+│ │ HTTT      │ 18     │ 6    │  1       │ 🗑      │         │
+│ └───────────┴────────┴──────┴──────────┴─────────┘         │
+│                                                             │
+│ [+ Thêm ngành/khóa]                                        │
+│                                                             │
+│ [🚀 Tạo bảng TKB]                                          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Mode 2: Bảng TKB + Pool GV (sau khi sinh rows)
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ Đợt: HK2 2025-2026  │ [⚡ Tự động xếp lịch] [💾 Lưu] [📥 Export Excel]    │
+├───────────────────────────────────────────────────────┬──────────────────────┤
+│ BẢNG TKB (scrollable)                                 │ Pool Giảng Viên      │
+│                                                       │                      │
+│ STT│Tên lớp   │Buổi│Mã HP   │Tên HP   │TC│LT│TH│Phòng│ [Tìm GV...    ]    │
+│────┼──────────┼────┼────────┼─────────┼──┼──┼──┼─────│                      │
+│  1 │CNTT 19-01│S ▼ │FIT3002 │Đại số LT│ 3│30│15│P.th │ ┌──────────────┐    │
+│    │ GV: ___  │TH:_│S:___   │C:___    │  │  │  │     │ │ Nguyễn Trà Mi│    │
+│────┼──────────┼────┼────────┼─────────┼──┼──┼──┼─────│ │ DN01400755   │    │
+│  2 │CNTT 19-01│S ▼ │FIT4004 │CTDL & GT│ 3│15│30│P.máy│ │ 📊 2 môn/45t │    │
+│    │ GV: ___  │TH:_│S:___   │C:___    │  │  │  │     │ └──────────────┘    │
+│────┼──────────┼────┼────────┼─────────┼──┼──┼──┼─────│ ┌──────────────┐    │
+│  3 │CNTT 19-01│S ▼ │FIT4015 │FE Design│ 3│15│30│P.máy│ │ Lê Diệu Anh │    │
+│    │🔴GV: ___ │TH:_│S:___   │C:___    │  │  │  │     │ │ DN01801849   │    │
+│    │(chưa xếp)│    │        │         │  │  │  │     │ │ 📊 0 môn/0t  │    │
+│...                                                    │ └──────────────┘    │
+│                                                       │ ...                  │
+└───────────────────────────────────────────────────────┴──────────────────────┘
+```
+
+**Chi tiết UI:**
+- **Dòng chưa xếp GV** → `background: #FEE2E2` (đỏ nhạt) + icon ⚠️
+- **Dòng đã xếp** → `background: #F0FDF4` (xanh nhạt)
+- **GV đã đạt max** → hiển thị xám, không kéo thả được
+- **Pool GV bên phải**: hiện thống kê realtime (số môn, số tiết, slots đã dùng)
+- **Cột Buổi**: dropdown `Sáng/Chiều`, auto xen kẽ khi sinh bảng
+
+---
+
+## 6. Logic sinh bảng TKB (`/generate`)
+
+```
+FOR mỗi SessionEntry (major, batch, semester_index, num_classes):
+  1. Lấy danh sách môn từ BatchSemesterSubject(major, batch, semester_index)
+  2. FOR class_num = 1..num_classes:
+     class_name = f"{major} {batch}-{class_num:02d}"
+     shift = "Sáng" nếu class_num lẻ, "Chiều" nếu chẵn
+     FOR mỗi subject:
+       Tạo TimetableRow(session_id, class_name, shift, subject, ...)
+       room_type = "Phòng máy" nếu practice_hours > theory_hours
+                   hoặc "Phòng thường"
+  3. Đánh số STT liên tục xuyên suốt
+```
+
+---
+
+## 7. Cập nhật files
+
+### Backend
+
+| File | Thay đổi |
+|---|---|
+| [models.py](file:///D:/.PROJECT_1/backend/app/models.py) | +3 models: `SchedulingSession`, `SessionEntry`, `TimetableRow` |
+| [schemas.py](file:///D:/.PROJECT_1/backend/app/schemas.py) | +schemas cho session, entry, row |
+| [timetable.py](file:///D:/.PROJECT_1/backend/app/api/endpoints/timetable.py) | **[NEW]** ~12 endpoints |
+| [scheduler.py](file:///D:/.PROJECT_1/backend/app/core/scheduler.py) | **[NEW]** Auto-scheduling engine |
+| [api_router.py](file:///D:/.PROJECT_1/backend/app/api/api_router.py) | Đăng ký router |
+| Alembic migration | 3 bảng mới |
+
+### Frontend
+
+| File | Thay đổi |
+|---|---|
+| [TimetableCenterPage.tsx](file:///D:/.PROJECT_1/frontend/src/pages/TimetableCenterPage.tsx) | **[NEW]** Trang chính |
+| [App.tsx](file:///D:/.PROJECT_1/frontend/src/App.tsx) | Cập nhật route `/timetable` |
+
+---
+
+## 8. Open Questions
+
+> [!IMPORTANT]
+> **Thủ công xếp GV:** Khi user kéo GV từ pool vào 1 dòng, hệ thống có nên **tự động kiểm tra ràng buộc** (trùng slot, max môn...) và **block** nếu vi phạm không? Hay cho phép tự do rồi cảnh báo sau?
+> 
+> → Tôi đề xuất: **block + thông báo lý do** (VD: "GV Nguyễn Trà Mi đã dạy slot S-T2 ở lớp CNTT 18-03"). Bạn duyệt?
+
+---
+
+## 9. Verification Plan
+
+### Automated
+- Migration thành công, backend/frontend khởi động OK
+
+### Manual (Browser)
+1. Tạo đợt "Test HK2" → thêm CNTT K19 Kì 4 (6 lớp) → sinh bảng
+2. Bảng hiển thị 6 lớp × N môn, buổi xen kẽ S/C
+3. Bấm "Tự động xếp lịch" → GV + Thứ được điền
+4. Dòng chưa xếp → bôi đỏ
+5. Kéo GV từ pool vào dòng trống → cập nhật realtime
+6. Lưu → refresh → dữ liệu persist
+7. Export Excel → cấu trúc đúng như mẫu
