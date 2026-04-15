@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Select, Button, Modal, message, Upload, Input, Form } from 'antd';
+import { Select, Button, Modal, message, Upload, Input, Form, Table } from 'antd';
 import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
@@ -112,6 +112,12 @@ const RegistrationsPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
 
+  // States for Smart Import
+  const [isAnalyzeModalOpen, setIsAnalyzeModalOpen] = useState(false);
+  const [missingSubjects, setMissingSubjects] = useState<any[]>([]);
+  const [missingLecturers, setMissingLecturers] = useState<any[]>([]);
+  const [draftAssignments, setDraftAssignments] = useState<any[]>([]);
+
   // Load Initial Data
   const fetchBaseData = async () => {
     try {
@@ -157,6 +163,80 @@ const RegistrationsPage: React.FC = () => {
     } catch {
       message.error("Lỗi tạo danh sách");
     }
+  };
+
+  // Import Analyze Handler
+  const handleUploadExcel = async (file: File) => {
+    if (!selectedListId) {
+      message.warning('Vui lòng chọn hoặc tạo 1 danh sách trước khi import');
+      return false;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const res = await apiClient.post('/registrations/import-analyze', formData, {
+         headers: {
+            'Content-Type': 'multipart/form-data'
+         }
+      });
+      const { missing_subjects, missing_lecturers, assignments } = res.data;
+      if (missing_subjects.length > 0 || missing_lecturers.length > 0) {
+         setMissingSubjects(missing_subjects);
+         setMissingLecturers(missing_lecturers);
+         setDraftAssignments(assignments);
+         setIsAnalyzeModalOpen(true);
+      } else {
+         applyDraftAssignments(assignments, subjects, lecturers);
+      }
+    } catch (e: any) {
+      message.error(e.response?.data?.detail || "Lỗi khi phân tích file");
+    }
+    return false; // Prevent default upload
+  };
+
+  const applyDraftAssignments = (drafts: any[], currentSubs: any[], currentLecs: any[]) => {
+      const newAsst: any[] = [];
+      const subMap = new Map(currentSubs.map(s => [s.subject_code, s.subject_id]));
+      const lecMap = new Map(currentLecs.map(l => [l.lecturer_code, { id: l.lecturer_id, name: l.full_name, type: l.type }]));
+      
+      for (const d of drafts) {
+          const subId = subMap.get(d.subject_code);
+          const lecInfo = lecMap.get(d.lecturer_code);
+          if (subId && lecInfo) {
+              newAsst.push({
+                 lecturer_id: lecInfo.id,
+                 lecturer_name: lecInfo.name,
+                 lecturer_code: d.lecturer_code,
+                 subject_id: subId,
+                 is_main_lecturer: d.is_main_lecturer
+              });
+          }
+      }
+      setAssignments(newAsst);
+      message.success("Đã load nguyện vọng lên màn hình. Vui lòng kiểm tra và bấm LƯU để xác nhận.");
+  }
+
+  const handleResolveMissing = async () => {
+      try {
+          const payload = {
+              resolved_subjects: missingSubjects,
+              resolved_lecturers: missingLecturers
+          };
+          await apiClient.post('/registrations/import-resolve', payload);
+          // Reload
+          const [resLecs, resSubs] = await Promise.all([
+            apiClient.get('/lecturers/'),
+            apiClient.get('/subjects/')
+          ]);
+          setLecturers(resLecs.data);
+          setSubjects(resSubs.data);
+          
+          applyDraftAssignments(draftAssignments, resSubs.data, resLecs.data);
+          setIsAnalyzeModalOpen(false);
+          message.success("Đã đưa dữ liệu mới vào CSDL Master thành công!");
+      } catch (e: any) {
+          message.error(e.response?.data?.detail || "Lỗi khi lưu dữ liệu mới");
+      }
   };
 
   // DnD Logic
@@ -226,6 +306,9 @@ const RegistrationsPage: React.FC = () => {
             placeholder="-- Chọn danh sách --"
           />
           <Button icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Tạo Nháp mới</Button>
+          <Upload beforeUpload={handleUploadExcel} showUploadList={false} accept=".xlsx, .xls">
+            <Button icon={<CloudUploadOutlined />} disabled={!selectedListId}>Import Excel</Button>
+          </Upload>
         </div>
         <div>
           {/* Export Excel API Call */}
@@ -317,6 +400,59 @@ const RegistrationsPage: React.FC = () => {
             <Input.TextArea />
           </Form.Item>
         </Form>
+      </Modal>
+
+      {/* Modal Kiểm duyệt Dữ liệu Mới */}
+      <Modal width={800} title="Kiểm Duyệt Dữ Liệu Mới" open={isAnalyzeModalOpen} onCancel={() => setIsAnalyzeModalOpen(false)} onOk={handleResolveMissing} okText="Xác nhận & Thêm vào hệ thống">
+          <p className="mb-4 text-orange-600 font-medium whitespace-pre-wrap">Hệ thống phát hiện một số dữ liệu chưa từng tồn tại trong CSDL. Vui lòng kiểm tra, điền bổ sung thông tin (như số tín chỉ, tiết học) trước khi chèn vào hệ thống Master.</p>
+          
+          {missingSubjects.length > 0 && (
+          <div className="mb-6">
+             <h3 className="font-bold mb-2 text-blue-700">Danh sách Môn Học Mới:</h3>
+             <Table dataSource={missingSubjects} pagination={false} rowKey="subject_code" size="small" bordered>
+                <Table.Column title="Mã Môn" dataIndex="subject_code" width={100} />
+                <Table.Column title="Tên Môn" dataIndex="subject_name" />
+                <Table.Column title="Tín chỉ" dataIndex="credits" width={100} render={(value, _record, index) => (
+                   <Input type="number" value={value} onChange={e => {
+                       const newVal = [...missingSubjects];
+                       newVal[index].credits = parseInt(e.target.value) || 0;
+                       setMissingSubjects(newVal);
+                   }} />
+                )} />
+                <Table.Column title="LT" dataIndex="theory_hours" width={80} render={(value, _record, index) => (
+                   <Input type="number" value={value} onChange={e => {
+                       const newVal = [...missingSubjects];
+                       newVal[index].theory_hours = parseInt(e.target.value) || 0;
+                       setMissingSubjects(newVal);
+                   }} />
+                )} />
+                <Table.Column title="TH" dataIndex="practice_hours" width={80} render={(value, _record, index) => (
+                   <Input type="number" value={value} onChange={e => {
+                       const newVal = [...missingSubjects];
+                       newVal[index].practice_hours = parseInt(e.target.value) || 0;
+                       setMissingSubjects(newVal);
+                   }} />
+                )} />
+             </Table>
+          </div>
+          )}
+          
+          {missingLecturers.length > 0 && (
+          <div>
+             <h3 className="font-bold mb-2 text-blue-700">Danh sách Giảng Viên Mới:</h3>
+             <Table dataSource={missingLecturers} pagination={false} rowKey="lecturer_code" size="small" bordered>
+                <Table.Column title="Mã GV" dataIndex="lecturer_code" width={150} />
+                <Table.Column title="Tên Giảng Viên" dataIndex="full_name" />
+                <Table.Column title="Hình thức" dataIndex="type" width={150} render={(value, _record, index) => (
+                   <Select value={value} onChange={val => {
+                       const newVal = [...missingLecturers];
+                       newVal[index].type = val;
+                       setMissingLecturers(newVal);
+                   }} options={[{label: 'Cơ hữu', value: 'Cơ hữu'}, {label: 'Thỉnh giảng', value: 'Thỉnh giảng'}]} />
+                )} />
+             </Table>
+          </div>
+          )}
       </Modal>
 
     </div>

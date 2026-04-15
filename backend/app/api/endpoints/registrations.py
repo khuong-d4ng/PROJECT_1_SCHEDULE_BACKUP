@@ -164,115 +164,100 @@ def export_registration_list(list_id: int, db: Session = Depends(get_db)):
     
 # --- 3. API: IMPORT TỪ EXCEL CHO 1 LIST ---
 
-class RegistrationPreviewItem(BaseModel):
-    subject_name: str
-    subject_code: str
-    main_lecturers_text: str
-    practice_lecturers_text: str
-
-@router.post("/import/preview", response_model=List[RegistrationPreviewItem])
-async def preview_registrations_import(file: UploadFile = File(...)):
-    if not file.filename.endswith('.xlsx'):
+@router.post("/import-analyze", response_model=schemas.ImportAnalyzeResponse)
+async def analyze_import(file: UploadFile = File(...), db: Session = Depends(get_db)):
+    if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(status_code=400, detail="Vui lòng tải lên file định dạng Excel")
+        
     try:
         contents = await file.read()
         df = pd.read_excel(io.BytesIO(contents))
-        df.columns = [str(c).strip() for c in df.columns]
         
-        preview_data = []
-        temp_count = 1
+        missing_subjects = {}
+        missing_lecturers = {}
+        assignments = []
+        
+        all_subjects = {s.subject_code: s for s in db.query(models.Subject).all()}
+        all_lecturers = {l.lecturer_code: l for l in db.query(models.Lecturer).all()}
         
         for index, row in df.iterrows():
-            subj_name = str(row.get('Tên học phần', '')).strip()
-            if not subj_name or subj_name == 'nan':
+            if len(row) < 4: continue
+                
+            subj_name = str(row.iloc[0]).strip() if pd.notnull(row.iloc[0]) else ""
+            subj_code = str(row.iloc[1]).strip() if pd.notnull(row.iloc[1]) else ""
+            
+            if not subj_code or subj_code == 'nan':
                 continue
                 
-            subj_code = str(row.get('Mã học phần', '')).strip()
-            if not subj_code or subj_code == 'nan':
-                subj_code = f"TEMP_X{temp_count:03d}"
-                temp_count += 1
+            if subj_code not in all_subjects and subj_code not in missing_subjects:
+                missing_subjects[subj_code] = schemas.MissingSubjectItem(
+                    subject_code=subj_code, subject_name=subj_name
+                )
                 
-            main_lec = str(row.get('Giảng viên chính', '')).strip()
-            prac_lec = str(row.get('Giảng viên thực hành', '')).strip()
+            main_lec_text = str(row.iloc[2]).strip() if pd.notnull(row.iloc[2]) else ""
+            prac_lec_text = str(row.iloc[3]).strip() if pd.notnull(row.iloc[3]) else ""
             
-            preview_data.append(RegistrationPreviewItem(
-                subject_name=subj_name,
-                subject_code=subj_code,
-                main_lecturers_text=main_lec if main_lec != 'nan' else '',
-                practice_lecturers_text=prac_lec if prac_lec != 'nan' else ''
-            ))
+            def parse_lecturers(text_data, is_main):
+                if not text_data or text_data == 'nan': return
+                parts = re.split(r'[,;]', text_data)
+                for part in parts:
+                    part = part.strip()
+                    if '-' in part:
+                        name, code = part.rsplit('-', 1)
+                        name = name.strip()
+                        code = code.strip()
+                        if code:
+                            if code not in all_lecturers and code not in missing_lecturers:
+                                missing_lecturers[code] = schemas.MissingLecturerItem(
+                                    lecturer_code=code, full_name=name
+                                )
+                            assignments.append(schemas.DirectAssignmentItem(
+                                subject_code=subj_code,
+                                lecturer_code=code,
+                                is_main_lecturer=is_main
+                            ))
+                            
+            parse_lecturers(main_lec_text, True)
+            parse_lecturers(prac_lec_text, False)
             
-        return preview_data
+        return schemas.ImportAnalyzeResponse(
+            missing_subjects=list(missing_subjects.values()),
+            missing_lecturers=list(missing_lecturers.values()),
+            assignments=assignments
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Lỗi khi phân tích file: {str(e)}")
 
-def extract_lecturer_codes(text: str) -> List[str]:
-    if not text: return []
-    parts = re.split(r'[,;]', text)
-    codes = []
-    for part in parts:
-        part = part.strip()
-        if '-' in part:
-            code = part.rsplit('-', 1)[1].strip()
-            if code: codes.append(code)
-    return list(set(codes))
-
-@router.post("/lists/{list_id}/import-commit")
-def commit_registrations_import(list_id: int, items: List[RegistrationPreviewItem], db: Session = Depends(get_db)):
-    db_list = db.query(models.RegistrationList).filter(models.RegistrationList.list_id == list_id).first()
-    if not db_list:
-        raise HTTPException(status_code=404, detail="Không tìm thấy danh sách (list_id)")
-        
+@router.post("/import-resolve")
+def resolve_import(payload: schemas.ImportResolveRequest, db: Session = Depends(get_db)):
     try:
-        # Xóa các nguyện vọng cũ của chính danh sách này
-        db.query(models.LecturerRegistration).filter(
-            models.LecturerRegistration.list_id == list_id
-        ).delete()
-        
-        all_lecturers = db.query(models.Lecturer).all()
-        lec_dict = {l.lecturer_code: l.lecturer_id for l in all_lecturers}
-        
-        imported_count = 0
-        
-        for item in items:
-            subject = db.query(models.Subject).filter(models.Subject.subject_code == item.subject_code).first()
-            if not subject:
-                subject = models.Subject(
-                    subject_code=item.subject_code,
-                    subject_name=item.subject_name,
-                    credits=3,
-                    theory_hours=30
+        # Create missing subjects
+        for s in payload.resolved_subjects:
+            exist = db.query(models.Subject).filter(models.Subject.subject_code == s.subject_code).first()
+            if not exist:
+                new_subj = models.Subject(
+                    subject_code=s.subject_code,
+                    subject_name=s.subject_name,
+                    credits=s.credits,
+                    theory_hours=s.theory_hours,
+                    practice_hours=s.practice_hours
                 )
-                db.add(subject)
-                db.flush()
+                db.add(new_subj)
                 
-            main_codes = extract_lecturer_codes(item.main_lecturers_text)
-            prac_codes = extract_lecturer_codes(item.practice_lecturers_text)
-            
-            for code in main_codes:
-                if code in lec_dict:
-                    reg = models.LecturerRegistration(
-                        list_id=list_id,
-                        lecturer_id=lec_dict[code],
-                        subject_id=subject.subject_id,
-                        is_main_lecturer=True
-                    )
-                    db.add(reg)
-                    imported_count += 1
-            
-            for code in prac_codes:
-                if code in lec_dict:
-                    reg = models.LecturerRegistration(
-                        list_id=list_id,
-                        lecturer_id=lec_dict[code],
-                        subject_id=subject.subject_id,
-                        is_main_lecturer=False
-                    )
-                    db.add(reg)
-                    imported_count += 1
-                    
+        # Create missing lecturers
+        for l in payload.resolved_lecturers:
+            exist = db.query(models.Lecturer).filter(models.Lecturer.lecturer_code == l.lecturer_code).first()
+            if not exist:
+                lec_type = models.LecturerTypeEnum.FULL_TIME if l.type == "Cơ hữu" else models.LecturerTypeEnum.VISITING
+                new_lec = models.Lecturer(
+                    full_name=l.full_name,
+                    lecturer_code=l.lecturer_code,
+                    type=lec_type
+                )
+                db.add(new_lec)
+                
         db.commit()
-        return {"message": f"Thành công! Đã đẩy {imported_count} mục nguyện vọng vào Danh sách."}
+        return {"message": "Đã thêm dữ liệu mới thành công"}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=f"Lỗi Transaction CSDL: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Lỗi thêm dữ liệu: {str(e)}")

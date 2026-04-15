@@ -126,4 +126,29 @@ class BatchSemesterSubjectSavePayload(BaseModel):
     semester_index: int      # 1..10
     subject_ids: List[int]   # Danh sách subject_id được gán
 
+# --- Import Excel Schemas ---
+class MissingSubjectItem(BaseModel):
+    subject_code: str
+    subject_name: str
+    credits: int = 3
+    theory_hours: int = 0
+    practice_hours: int = 0
 
+class MissingLecturerItem(BaseModel):
+    lecturer_code: str
+    full_name: str
+    type: str = "Cơ hữu"
+
+class DirectAssignmentItem(BaseModel):
+    subject_code: str
+    lecturer_code: str
+    is_main_lecturer: bool
+
+class ImportAnalyzeResponse(BaseModel):
+    missing_subjects: List[MissingSubjectItem]
+    missing_lecturers: List[MissingLecturerItem]
+    assignments: List[DirectAssignmentItem]
+
+class ImportResolveRequest(BaseModel):
+    resolved_subjects: List[MissingSubjectItem]
+    resolved_lecturers: List[MissingLecturerItem]
