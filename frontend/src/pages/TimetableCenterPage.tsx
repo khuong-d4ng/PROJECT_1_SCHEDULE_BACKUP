@@ -21,14 +21,16 @@ export default function TimetableCenterPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [regLists, setRegLists] = useState<any[]>([]);
   
+  const [programs, setPrograms] = useState<any[]>([]);
+  
   // Wizard Form values
   const [wizardConfig, setWizardConfig] = useState({
     plan_name: "",
     registration_list_id: null,
-    majors: [] as string[]
+    program_ids: [] as number[]
   });
   
-  // Dynamic entries mapping: { [major]: [{batch, semester}] }
+  // Dynamic entries mapping: { [program_id]: [{semester_index}] }
   const [entriesConfig, setEntriesConfig] = useState<any>({});
 
   const fetchSessions = async () => {
@@ -49,9 +51,17 @@ export default function TimetableCenterPage() {
     }
   };
 
+  const fetchPrograms = async () => {
+    try {
+      const res = await apiClient.get('/programs/');
+      setPrograms(res.data);
+    } catch {}
+  };
+
   useEffect(() => {
     fetchSessions();
     fetchRegLists();
+    fetchPrograms();
   }, []);
 
   const loadSessionDetails = async (id: number) => {
@@ -66,42 +76,40 @@ export default function TimetableCenterPage() {
 
   // --- WIZARD HANDLERS ---
   const handleNextStep1 = () => {
-    if (!wizardConfig.plan_name || wizardConfig.majors.length === 0) {
-      message.warning("Vui lòng điền Tên đợt và chọn ít nhất 1 Ngành");
+    if (!wizardConfig.plan_name || wizardConfig.program_ids.length === 0) {
+      message.warning("Vui lòng điền Tên đợt và chọn ít nhất 1 Khung Chương Trình");
       return;
     }
-    // Khởi tạo config mảng cho mỗi ngành nếu chưa có
     const newConfig = { ...entriesConfig };
-    wizardConfig.majors.forEach(m => {
-      if (!newConfig[m]) {
-        newConfig[m] = [{ batch_code: "", semester_index: 1 }];
+    wizardConfig.program_ids.forEach(p_id => {
+      if (!newConfig[p_id]) {
+        newConfig[p_id] = [{ semester_index: 1 }];
       }
     });
     setEntriesConfig(newConfig);
     setCurrentStep(1);
   };
 
-  const handleAddEntry = (major: string) => {
-    const list = [...entriesConfig[major]];
-    list.push({ batch_code: "", semester_index: 1 });
-    setEntriesConfig({ ...entriesConfig, [major]: list });
+  const handleAddEntry = (p_id: number) => {
+    const list = [...entriesConfig[p_id]];
+    list.push({ semester_index: 1 });
+    setEntriesConfig({ ...entriesConfig, [p_id]: list });
   };
 
-  const updateEntry = (major: string, index: number, field: string, val: any) => {
-    const list = [...entriesConfig[major]];
+  const updateEntry = (p_id: number, index: number, field: string, val: any) => {
+    const list = [...entriesConfig[p_id]];
     list[index][field] = val;
-    setEntriesConfig({ ...entriesConfig, [major]: list });
+    setEntriesConfig({ ...entriesConfig, [p_id]: list });
   };
 
   const handleGenerate = async () => {
     try {
       const payloadEntries: any[] = [];
-      Object.keys(entriesConfig).forEach(major => {
-        entriesConfig[major].forEach((cfg: any) => {
-          if (cfg.batch_code) {
+      Object.keys(entriesConfig).forEach(p_id => {
+        entriesConfig[p_id].forEach((cfg: any) => {
+          if (cfg.semester_index) {
             payloadEntries.push({
-              major_code: major,
-              batch_code: cfg.batch_code,
+              program_id: parseInt(p_id),
               semester_index: cfg.semester_index
             });
           }
@@ -109,7 +117,7 @@ export default function TimetableCenterPage() {
       });
 
       if (payloadEntries.length === 0) {
-        message.warning("Vui lòng điền đầy đủ Khóa & Kỳ cho các ngành");
+        message.warning("Vui lòng điện đầy đủ Kỳ cho các khung");
         return;
       }
 
@@ -122,7 +130,7 @@ export default function TimetableCenterPage() {
       message.success("Tạo Đợt TKB và Gen dữ liệu Lớp-Môn thành công!");
       setIsWizardOpen(false);
       setCurrentStep(0);
-      setWizardConfig({ plan_name: "", registration_list_id: null, majors: [] });
+      setWizardConfig({ plan_name: "", registration_list_id: null, program_ids: [] });
       fetchSessions();
       loadSessionDetails(res.data.session_id);
 
@@ -267,19 +275,14 @@ export default function TimetableCenterPage() {
               />
             </div>
             <div>
-              <label className="font-semibold block mb-1">Chọn Ngành tham gia xếp lịch (*):</label>
+              <label className="font-semibold block mb-1">Chọn Khung Chương Trình tham gia xếp lịch (*):</label>
               <Select 
                 mode="multiple"
                 className="w-full"
-                placeholder="Chọn ít nhất 1 Ngành"
-                value={wizardConfig.majors}
-                onChange={val => setWizardConfig({...wizardConfig, majors: val})}
-                options={[
-                  {label: "Công nghệ Thông tin (CNTT)", value: "CNTT"},
-                  {label: "Hệ thống Thông tin (HTTT)", value: "HTTT"},
-                  {label: "Khoa học Máy tính (KHMT)", value: "KHMT"},
-                  {label: "Thiết kế Đồ họa (TKDH)", value: "TKDH"}
-                ]}
+                placeholder="Chọn ít nhất 1 Chương trình"
+                value={wizardConfig.program_ids}
+                onChange={val => setWizardConfig({...wizardConfig, program_ids: val})}
+                options={programs.map(p => ({label: `${p.name} (Khóa ${p.batch})`, value: p.id}))}
               />
             </div>
             <div className="text-right mt-6">
@@ -294,30 +297,30 @@ export default function TimetableCenterPage() {
               Hệ thống sẽ dựa vào cấu hình dưới đây để nhân chéo với DB (Lấy các lớp của khóa tương ứng, lấy các môn của học kì đó) và tự sinh (auto-gen) ra một cấu trúc Mảng y hệt file Excel.
             </div>
             
-            {wizardConfig.majors.map(major => (
-              <Card key={major} title={<span className="text-blue-700">Ngành: {major}</span>} size="small">
-                {entriesConfig[major]?.map((cfg: any, i: number) => (
-                  <Row gutter={16} key={i} className="mb-2">
-                    <Col span={10}>
-                      <Input placeholder="Khóa (VD: 19)" value={cfg.batch_code} onChange={e => updateEntry(major, i, 'batch_code', e.target.value)} />
-                    </Col>
-                    <Col span={10}>
-                      <Select className="w-full" value={cfg.semester_index} onChange={v => updateEntry(major, i, 'semester_index', v)} options={[1,2,3,4,5,6,7,8].map(n=>({label:`Kì ${n}`, value:n}))} />
-                    </Col>
-                    <Col span={4}>
-                      <Button danger type="text" onClick={() => {
-                        const list = [...entriesConfig[major]];
-                        list.splice(i, 1);
-                        setEntriesConfig({...entriesConfig, [major]: list});
-                      }}>Xóa</Button>
-                    </Col>
-                  </Row>
-                ))}
-                <Button type="dashed" block icon={<PlusOutlined />} onClick={() => handleAddEntry(major)}>
-                  Thêm Khóa Khác Cho Ngành Này
-                </Button>
-              </Card>
-            ))}
+            {wizardConfig.program_ids.map(p_id => {
+              const prog = programs.find(p => p.id === p_id);
+              return (
+                <Card key={p_id} title={<span className="text-blue-700">Chương trình: {prog?.name}</span>} size="small">
+                  {entriesConfig[p_id]?.map((cfg: any, i: number) => (
+                    <Row gutter={16} key={i} className="mb-2">
+                      <Col span={10}>
+                        <Select className="w-full" value={cfg.semester_index} onChange={v => updateEntry(p_id, i, 'semester_index', v)} options={[1,2,3,4,5,6,7,8].map(n=>({label:`Học Kì ${n}`, value:n}))} />
+                      </Col>
+                      <Col span={4}>
+                        <Button danger type="text" onClick={() => {
+                          const list = [...entriesConfig[p_id]];
+                          list.splice(i, 1);
+                          setEntriesConfig({...entriesConfig, [p_id]: list});
+                        }}>Xóa</Button>
+                      </Col>
+                    </Row>
+                  ))}
+                  <Button type="dashed" block icon={<PlusOutlined />} onClick={() => handleAddEntry(p_id)}>
+                    Thêm Kì Khác Cho Chương Trình Này
+                  </Button>
+                </Card>
+              );
+            })}
 
             <div className="flex justify-between mt-6">
               <Button onClick={() => setCurrentStep(0)}>← Quay lại</Button>

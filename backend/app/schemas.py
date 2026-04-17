@@ -69,16 +69,48 @@ class Semester(SemesterBase):
     class Config:
         from_attributes = True
 
+# --- Training Program & Curriculum Schemas ---
+class TrainingProgramBase(BaseModel):
+    program_code: str
+    name: str
+    department_major: Optional[str] = None
+    batch: Optional[str] = None
+
+class TrainingProgramCreate(TrainingProgramBase):
+    pass
+
+class TrainingProgramResponse(TrainingProgramBase):
+    id: int
+
+    class Config:
+        from_attributes = True
+
+class ProgramCurriculumItem(BaseModel):
+    subject_id: int
+    subject_code: str
+    subject_name: str
+    credits: int
+    theory_credits: int
+    practice_credits: int
+    semester_index: int
+
+    class Config:
+        from_attributes = True
+
+
 # --- Class Schemas ---
 class ClassBase(BaseModel):
     class_name: str
-    major_id: Optional[str] = None
+    department_major: Optional[str] = None
+    batch: Optional[str] = None
+    program_id: Optional[int] = None
 
 class ClassCreate(ClassBase):
     pass
 
 class ClassResponse(ClassBase):
     class_id: int
+    program: Optional[TrainingProgramResponse] = None
 
     class Config:
         from_attributes = True
@@ -98,35 +130,6 @@ class RegistrationListResponse(RegistrationListBase):
 
     class Config:
         from_attributes = True
-
-# --- Curriculum (Chương trình đào tạo) Schemas ---
-class MajorSubjectItem(BaseModel):
-    subject_id: int
-    subject_code: str
-    subject_name: str
-    credits: int
-
-    class Config:
-        from_attributes = True
-
-class MajorSubjectSavePayload(BaseModel):
-    subject_ids: List[int]
-
-# --- BatchSemesterSubject (Xếp môn vào kì theo khóa) Schemas ---
-class BatchSemesterSubjectItem(BaseModel):
-    subject_id: int
-    subject_code: str
-    subject_name: str
-    credits: int
-
-    class Config:
-        from_attributes = True
-
-class BatchSemesterSubjectSavePayload(BaseModel):
-    major_code: str          # "CNTT"
-    batch_code: str          # "19"
-    semester_index: int      # 1..10
-    subject_ids: List[int]   # Danh sách subject_id được gán
 
 # --- Import Excel Schemas ---
 class MissingSubjectItem(BaseModel):
@@ -157,8 +160,7 @@ class ImportResolveRequest(BaseModel):
 
 # --- Timetables Schemas ---
 class SessionEntryConfig(BaseModel):
-    major_code: str
-    batch_code: str
+    program_id: int
     semester_index: int
 
 class TimetableSessionCreate(BaseModel):

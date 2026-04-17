@@ -86,8 +86,11 @@ class Class(Base):
     __tablename__ = "classes"
     class_id = Column(Integer, primary_key=True, index=True)
     class_name = Column(String(50), nullable=False)
-    major_id = Column(String(50), nullable=True) # Mở rộng
+    department_major = Column(String(50), nullable=True, index=True) # e.g. "CNTT"
+    batch = Column(String(10), nullable=True, index=True) # e.g. "19"
+    program_id = Column(Integer, ForeignKey("training_programs.id", ondelete="SET NULL"), nullable=True)
     
+    program = relationship("TrainingProgram", back_populates="classes")
     schedules = relationship("Schedule", back_populates="class_")
 
 class RegistrationList(Base):
@@ -130,24 +133,27 @@ class Schedule(Base):
     subject = relationship("Subject", back_populates="schedules")
     lecturer = relationship("Lecturer", back_populates="schedules")
 
-class MajorSubject(Base):
-    """Chương trình đào tạo: gán danh sách môn cho từng ngành"""
-    __tablename__ = "major_subjects"
+class TrainingProgram(Base):
+    """Khung Chương Trình Đào Tạo đại diện cho Chuyên ngành riêng biệt"""
+    __tablename__ = "training_programs"
     id = Column(Integer, primary_key=True, index=True)
-    major_code = Column(String(20), nullable=False, index=True)  # "CNTT", "HTTT", "KHMT"
-    subject_id = Column(Integer, ForeignKey("subjects.subject_id"), nullable=False)
+    program_code = Column(String(50), nullable=False, unique=True, index=True) # e.g. "CNTT_PM_19"
+    name = Column(String(200), nullable=False) # e.g. "Công nghệ thông tin - PM Khóa 19"
+    department_major = Column(String(50), nullable=True) # e.g. "CNTT"
+    batch = Column(String(10), nullable=True) # e.g. "19"
     
-    subject = relationship("Subject")
+    curriculums = relationship("ProgramCurriculum", back_populates="program", cascade="all, delete-orphan")
+    classes = relationship("Class", back_populates="program")
 
-class BatchSemesterSubject(Base):
-    """Xếp môn vào từng kì cho từng khóa (áp dụng chung cho tất cả lớp trong khóa)"""
-    __tablename__ = "batch_semester_subjects"
+class ProgramCurriculum(Base):
+    """Bảng Mapping Môn học vào từng kỳ của 1 Khung Chương Trình"""
+    __tablename__ = "program_curriculums"
     id = Column(Integer, primary_key=True, index=True)
-    major_code = Column(String(20), nullable=False, index=True)    # "CNTT", "HTTT", "KHMT"
-    batch_code = Column(String(10), nullable=False, index=True)    # "19"
-    semester_index = Column(Integer, nullable=False)                # 1..10
+    program_id = Column(Integer, ForeignKey("training_programs.id", ondelete="CASCADE"), nullable=False)
+    semester_index = Column(Integer, nullable=False) # 1..10
     subject_id = Column(Integer, ForeignKey("subjects.subject_id"), nullable=False)
     
+    program = relationship("TrainingProgram", back_populates="curriculums")
     subject = relationship("Subject")
 
 class TimetableSessionStatusEnum(str, enum.Enum):
@@ -171,8 +177,7 @@ class SessionEntry(Base):
     __tablename__ = "session_entries"
     id = Column(Integer, primary_key=True, index=True)
     session_id = Column(Integer, ForeignKey("scheduling_sessions.session_id", ondelete="CASCADE"), nullable=False)
-    major_code = Column(String(20), nullable=False)
-    batch_code = Column(String(10), nullable=False)
+    program_id = Column(Integer, ForeignKey("training_programs.id", ondelete="CASCADE"), nullable=False)
     semester_index = Column(Integer, nullable=False)
     
     session = relationship("SchedulingSession", back_populates="entries")

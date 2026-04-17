@@ -5,6 +5,7 @@ import LecturersPage from './pages/LecturersPage';
 import RegistrationsPage from './pages/RegistrationsPage';
 import CurriculumPage from './pages/CurriculumPage';
 import TimetableCenterPage from './pages/TimetableCenterPage';
+import ClassesPage from './pages/ClassesPage';
 
 // Component để quản lý style cho link đang active
 const SidebarLink = ({ to, children }: { to: string, children: React.ReactNode }) => {
@@ -40,6 +41,7 @@ function App() {
               <SidebarLink to="/subjects">Quản lý Môn học</SidebarLink>
               <SidebarLink to="/lecturers">Quản lý Giảng viên</SidebarLink>
               <SidebarLink to="/curriculum">Chương trình đào tạo</SidebarLink>
+              <SidebarLink to="/classes">Quản lý Lớp Cố định</SidebarLink>
               <SidebarLink to="/timetable">Bảng TKB Trung tâm</SidebarLink>
               <SidebarLink to="/registrations">Nguyện vọng giảng dạy</SidebarLink>
             </nav>
@@ -81,6 +83,7 @@ function App() {
               <Route path="/subjects" element={<SubjectsPage />} />
               <Route path="/lecturers" element={<LecturersPage />} />
               <Route path="/curriculum" element={<CurriculumPage />} />
+              <Route path="/classes" element={<ClassesPage />} />
               <Route path="/timetable" element={<TimetableCenterPage />} />
               <Route path="/registrations" element={<RegistrationsPage />} />
             </Routes>

@@ -27,31 +27,27 @@ def generate_timetable(payload: schemas.TimetableSessionCreate, db: Session = De
         for entry in payload.entries:
             db.add(models.SessionEntry(
                 session_id=new_session.session_id,
-                major_code=entry.major_code,
-                batch_code=entry.batch_code,
+                program_id=entry.program_id,
                 semester_index=entry.semester_index
             ))
             
         # Core Auto-Gen Logic
         generated_rows = 0
         for entry in payload.entries:
-            # Lấy tất cả Môn học của (Ngành + Khóa + Kỳ)
-            batch_subjects = db.query(models.BatchSemesterSubject).filter(
-                models.BatchSemesterSubject.major_code == entry.major_code,
-                models.BatchSemesterSubject.batch_code == entry.batch_code,
-                models.BatchSemesterSubject.semester_index == entry.semester_index
+            # Lấy tất cả Môn học của (Chương trình + Kỳ)
+            curriculums = db.query(models.ProgramCurriculum).filter(
+                models.ProgramCurriculum.program_id == entry.program_id,
+                models.ProgramCurriculum.semester_index == entry.semester_index
             ).all()
             
-            if not batch_subjects:
+            if not curriculums:
                 continue
                 
-            subject_ids = [bs.subject_id for bs in batch_subjects]
+            subject_ids = [c.subject_id for c in curriculums]
             
-            # Lấy tất cả Lớp thuộc Ngành & Khóa đó
-            # Giả định quy tắc tên lớp: "CNTT 19-01" -> startswith f"{entry.major_code} {entry.batch_code}"
-            class_prefix = f"{entry.major_code} {entry.batch_code}"
+            # Lấy tất cả Lớp thuộc Chương trình đó
             classes = db.query(models.Class).filter(
-                models.Class.class_name.like(f"{class_prefix}%")
+                models.Class.program_id == entry.program_id
             ).all()
             
             # Nhân chéo: Lớp x Môn
