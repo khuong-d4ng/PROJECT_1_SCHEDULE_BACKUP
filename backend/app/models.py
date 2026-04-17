@@ -62,6 +62,8 @@ class Subject(Base):
     subject_code = Column(String(20), unique=True, nullable=False)
     subject_name = Column(String(200), nullable=False)
     credits = Column(Integer, nullable=False)
+    theory_credits = Column(Integer, default=0)
+    practice_credits = Column(Integer, default=0)
     theory_hours = Column(Integer, default=0)
     practice_hours = Column(Integer, default=0)
     
@@ -148,4 +150,53 @@ class BatchSemesterSubject(Base):
     
     subject = relationship("Subject")
 
+class TimetableSessionStatusEnum(str, enum.Enum):
+    DRAFT = "DRAFT"
+    ACTIVE = "ACTIVE"
+    DONE = "DONE"
 
+class SchedulingSession(Base):
+    __tablename__ = "scheduling_sessions"
+    session_id = Column(Integer, primary_key=True, index=True)
+    plan_name = Column(String(200), nullable=False)
+    registration_list_id = Column(Integer, ForeignKey("registration_lists.list_id"), nullable=True)
+    created_at = Column(Date, default=datetime.utcnow)
+    status = Column(Enum(TimetableSessionStatusEnum), default=TimetableSessionStatusEnum.DRAFT)
+    
+    entries = relationship("SessionEntry", back_populates="session", cascade="all, delete-orphan")
+    timetable_rows = relationship("TimetableRow", back_populates="session", cascade="all, delete-orphan")
+
+class SessionEntry(Base):
+    """Cấu hình các block (Ngành, Khóa, Kì) đã chọn để gen TKB"""
+    __tablename__ = "session_entries"
+    id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("scheduling_sessions.session_id", ondelete="CASCADE"), nullable=False)
+    major_code = Column(String(20), nullable=False)
+    batch_code = Column(String(10), nullable=False)
+    semester_index = Column(Integer, nullable=False)
+    
+    session = relationship("SchedulingSession", back_populates="entries")
+
+class TimetableRow(Base):
+    """Tương đương 1 Row của file Excel hiển thị trên Frontend"""
+    __tablename__ = "timetable_rows"
+    row_id = Column(Integer, primary_key=True, index=True)
+    session_id = Column(Integer, ForeignKey("scheduling_sessions.session_id", ondelete="CASCADE"), nullable=False)
+    
+    class_name = Column(String(50), nullable=False)
+    subject_id = Column(Integer, ForeignKey("subjects.subject_id"), nullable=False)
+    
+    fixed_shift = Column(String(50), nullable=True) # Sáng / Chiều
+    room_type = Column(String(50), nullable=True)   # Phòng thường, Phòng máy
+    
+    # Lịch & Phân công
+    morning_day = Column(String(50), nullable=True)   # VD: S-T2
+    afternoon_day = Column(String(50), nullable=True) # VD: C-T2
+    
+    main_lecturer_id = Column(Integer, ForeignKey("lecturers.lecturer_id"), nullable=True)
+    prac_lecturer_id = Column(Integer, ForeignKey("lecturers.lecturer_id"), nullable=True)
+
+    session = relationship("SchedulingSession", back_populates="timetable_rows")
+    subject = relationship("Subject")
+    main_lecturer = relationship("Lecturer", foreign_keys=[main_lecturer_id])
+    prac_lecturer = relationship("Lecturer", foreign_keys=[prac_lecturer_id])

@@ -35,7 +35,14 @@ const SubjectsPage: React.FC = () => {
 
   const handleAdd = async (values: any) => {
     try {
-      await apiClient.post('/subjects/', values);
+      // Calculate hours based on credit weight
+      const payload = {
+        ...values,
+        theory_hours: (values.theory_credits || 0) * 15,
+        practice_hours: (values.practice_credits || 0) * 15
+      };
+      
+      await apiClient.post('/subjects/', payload);
       message.success('Thêm môn học thành công');
       setIsModalOpen(false);
       form.resetFields();
@@ -49,9 +56,10 @@ const SubjectsPage: React.FC = () => {
     { title: 'ID', dataIndex: 'subject_id', key: 'subject_id' },
     { title: 'Mã học phần', dataIndex: 'subject_code', key: 'subject_code' },
     { title: 'Tên môn học', dataIndex: 'subject_name', key: 'subject_name' },
-    { title: 'Số TC', dataIndex: 'credits', key: 'credits' },
-    { title: 'Lý thuyết', dataIndex: 'theory_hours', key: 'theory_hours' },
-    { title: 'Thực hành', dataIndex: 'practice_hours', key: 'practice_hours' },
+    { title: 'Số TC', dataIndex: 'credits', key: 'credits', align: 'center' as const },
+    { title: 'Trọng số (LT-TH)', key: 'weight', align: 'center' as const, render: (_: any, record: Subject) => `${record.theory_credits || 0} - ${record.practice_credits || 0}` },
+    { title: 'Tiết Lý thuyết', dataIndex: 'theory_hours', key: 'theory_hours', align: 'center' as const },
+    { title: 'Tiết Thực hành', dataIndex: 'practice_hours', key: 'practice_hours', align: 'center' as const },
   ];
 
   return (
@@ -80,15 +88,21 @@ const SubjectsPage: React.FC = () => {
           <Form.Item name="subject_name" label="Tên môn học" rules={[{ required: true }]}>
             <Input />
           </Form.Item>
-          <Form.Item name="credits" label="Số tín chỉ" rules={[{ required: true }]}>
-            <InputNumber min={1} className="w-full" />
-          </Form.Item>
-          <Form.Item name="theory_hours" label="Số tiết Lý thuyết" rules={[{ required: true }]}>
-            <InputNumber min={0} className="w-full" />
-          </Form.Item>
-          <Form.Item name="practice_hours" label="Số tiết Thực hành" rules={[{ required: true }]}>
-            <InputNumber min={0} className="w-full" />
-          </Form.Item>
+          <div className="flex space-x-4">
+            <Form.Item className="flex-1" name="credits" label="Tổng Tín Chỉ" rules={[{ required: true }]}>
+              <InputNumber min={1} className="w-full" />
+            </Form.Item>
+            <Form.Item className="flex-1" name="theory_credits" label="Tín chỉ Lý Thuyết" initialValue={0}>
+              <InputNumber min={0} className="w-full" />
+            </Form.Item>
+            <Form.Item className="flex-1" name="practice_credits" label="Tín chỉ Thực Hành" initialValue={0}>
+              <InputNumber min={0} className="w-full" />
+            </Form.Item>
+          </div>
+          <div className="text-sm text-gray-500 mb-4 bg-gray-50 p-2 rounded border">
+            *Lưu ý: Số tiết sẽ tự động được máy chủ nhân 15. <br/>
+            (Lý thuyết = TC LT × 15 | Thực hành = TC TH × 15)
+          </div>
         </Form>
       </Modal>
     </div>

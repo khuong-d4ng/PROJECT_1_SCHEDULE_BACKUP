@@ -22,6 +22,8 @@ class SubjectBase(BaseModel):
     subject_code: str
     subject_name: str
     credits: int
+    theory_credits: int = 0
+    practice_credits: int = 0
     theory_hours: int = 0
     practice_hours: int = 0
 
@@ -152,3 +154,53 @@ class ImportAnalyzeResponse(BaseModel):
 class ImportResolveRequest(BaseModel):
     resolved_subjects: List[MissingSubjectItem]
     resolved_lecturers: List[MissingLecturerItem]
+
+# --- Timetables Schemas ---
+class SessionEntryConfig(BaseModel):
+    major_code: str
+    batch_code: str
+    semester_index: int
+
+class TimetableSessionCreate(BaseModel):
+    plan_name: str
+    registration_list_id: Optional[int] = None
+    entries: List[SessionEntryConfig]
+
+class TimetableSessionResponse(BaseModel):
+    session_id: int
+    plan_name: str
+    registration_list_id: Optional[int]
+    status: str
+    created_at: date
+
+    class Config:
+        from_attributes = True
+
+class TimetableRowResponse(BaseModel):
+    row_id: int
+    class_name: str
+    subject_id: int
+    subject_code: str
+    subject_name: str
+    credits: int
+    theory_hours: int
+    practice_hours: int
+    fixed_shift: Optional[str]
+    room_type: Optional[str]
+    morning_day: Optional[str]
+    afternoon_day: Optional[str]
+    main_lecturer_id: Optional[int]
+    prac_lecturer_id: Optional[int]
+    main_lecturer_name: Optional[str]
+    prac_lecturer_name: Optional[str]
+
+    class Config:
+        from_attributes = True
+
+class TimetableRowUpdate(BaseModel):
+    fixed_shift: Optional[str] = None
+    room_type: Optional[str] = None
+    morning_day: Optional[str] = None
+    afternoon_day: Optional[str] = None
+    main_lecturer_id: Optional[int] = None
+    prac_lecturer_id: Optional[int] = None

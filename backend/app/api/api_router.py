@@ -1,5 +1,5 @@
 from fastapi import APIRouter
-from app.api.endpoints import subjects, lecturers, semesters, registrations, curriculum, class_semester_subjects
+from app.api.endpoints import subjects, lecturers, semesters, registrations, curriculum, class_semester_subjects, timetables
 
 api_router = APIRouter()
 api_router.include_router(subjects.router, prefix="/subjects", tags=["subjects"])
@@ -8,3 +8,4 @@ api_router.include_router(semesters.router, prefix="/semesters", tags=["semester
 api_router.include_router(registrations.router, prefix="/registrations", tags=["registrations"])
 api_router.include_router(curriculum.router, prefix="/curriculum", tags=["curriculum"])
 api_router.include_router(class_semester_subjects.router, prefix="/class-semester-subjects", tags=["class-semester-subjects"])
+api_router.include_router(timetables.router, prefix="/timetables", tags=["timetables"])
