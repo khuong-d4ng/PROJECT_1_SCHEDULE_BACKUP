@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Select, Button, Modal, message, Upload, Input, Form, Table, Tag, Tooltip, Popover, Checkbox } from 'antd';
-import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined, FilterOutlined, SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
+import { Select, Button, Modal, message, Upload, Input, Form, Table, Tag, Tooltip, Popover, Card, Row, Col } from 'antd';
+import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined, FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, AppstoreAddOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -128,6 +128,14 @@ const RegistrationsPage: React.FC = () => {
   const [filteredSubjectIds, setFilteredSubjectIds] = useState<Set<number> | null>(null);
   const [loadingFilter, setLoadingFilter] = useState(false);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+
+  // ---- BATCH MODAL (Tạo đợt) ----
+  const [batchModalOpen, setBatchModalOpen] = useState(false);
+  const [batchProgramIds, setBatchProgramIds] = useState<number[]>([]);
+  // entriesConfig: { [program_id]: number[] }  — mảng các semester_index cho mỗi program
+  const [batchEntries, setBatchEntries] = useState<Record<number, number[]>>({});
+  const [loadingBatch, setLoadingBatch] = useState(false);
+  const [batchFilterLabel, setBatchFilterLabel] = useState<string | null>(null);
 
   // ---- LECTURER FILTER + SORT ----
   const [lecTypeFilter, setLecTypeFilter] = useState<string | null>(null); // 'Cơ hữu' | 'Thỉnh giảng' | null
@@ -357,6 +365,66 @@ const RegistrationsPage: React.FC = () => {
     setFilteredSubjectIds(null);
     setFilterProgramIds([]);
     setFilterSemester(null);
+    setBatchFilterLabel(null);
+  };
+
+  // --- BATCH MODAL LOGIC ---
+  const handleBatchProgramChange = (ids: number[]) => {
+    setBatchProgramIds(ids);
+    // Initialize entries for new programs, remove old ones
+    const newEntries: Record<number, number[]> = {};
+    for (const id of ids) {
+      newEntries[id] = batchEntries[id] || [1]; // default kì 1
+    }
+    setBatchEntries(newEntries);
+  };
+
+  const addSemesterToProgram = (pid: number) => {
+    const current = batchEntries[pid] || [];
+    setBatchEntries({ ...batchEntries, [pid]: [...current, 1] });
+  };
+
+  const removeSemesterFromProgram = (pid: number, idx: number) => {
+    const current = [...(batchEntries[pid] || [])];
+    current.splice(idx, 1);
+    setBatchEntries({ ...batchEntries, [pid]: current });
+  };
+
+  const updateSemesterValue = (pid: number, idx: number, val: number) => {
+    const current = [...(batchEntries[pid] || [])];
+    current[idx] = val;
+    setBatchEntries({ ...batchEntries, [pid]: current });
+  };
+
+  const applyBatchFilter = async () => {
+    if (batchProgramIds.length === 0) {
+      message.warning('Vui lòng chọn ít nhất 1 khung chương trình');
+      return;
+    }
+    setLoadingBatch(true);
+    try {
+      const ids = new Set<number>();
+      const labelParts: string[] = [];
+      for (const pid of batchProgramIds) {
+        const semesters = batchEntries[pid] || [];
+        if (semesters.length === 0) continue;
+        const res = await apiClient.get(`/programs/${pid}/curriculum`);
+        const prog = programs.find((p: any) => p.id === pid);
+        for (const sem of semesters) {
+          const items = res.data.filter((c: any) => c.semester_index === sem);
+          items.forEach((c: any) => ids.add(c.subject_id));
+        }
+        labelParts.push(`${prog?.name || pid}: K${semesters.join(',')}`); 
+      }
+      setFilteredSubjectIds(ids);
+      setBatchFilterLabel(labelParts.join(' | '));
+      setBatchModalOpen(false);
+      message.success(`Đã tạo đợt: ${ids.size} môn học`);
+    } catch {
+      message.error('Lỗi khi tải dữ liệu chương trình');
+    } finally {
+      setLoadingBatch(false);
+    }
   };
 
   // --- DISPLAY SUBJECTS (filtered) ---
@@ -456,9 +524,12 @@ const RegistrationsPage: React.FC = () => {
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                 {filteredSubjectIds && (
                   <Tag color="orange" closable onClose={clearCurriculumFilter} style={{ margin: 0, fontSize: '11px' }}>
-                    Đang lọc: {filteredSubjectIds.size} môn
+                    {batchFilterLabel ? `Đợt: ${filteredSubjectIds.size} môn` : `Lọc: ${filteredSubjectIds.size} môn`}
                   </Tag>
                 )}
+                <Tooltip title="Tạo đợt môn học (chọn kì riêng cho từng khung)">
+                  <Button size="small" icon={<AppstoreAddOutlined />} onClick={() => setBatchModalOpen(true)}>Tạo đợt</Button>
+                </Tooltip>
                 <Popover
                   title={<span style={{ fontWeight: 600 }}>Lọc môn theo Đợt học</span>}
                   trigger="click"
@@ -665,6 +736,75 @@ const RegistrationsPage: React.FC = () => {
              </Table>
           </div>
           )}
+      </Modal>
+
+      {/* Modal Tạo Đợt */}
+      <Modal
+        title={<span style={{ fontWeight: 600 }}>Tạo Đợt Môn Học</span>}
+        open={batchModalOpen}
+        onCancel={() => setBatchModalOpen(false)}
+        onOk={applyBatchFilter}
+        okText="Áp dụng"
+        cancelText="Hủy"
+        confirmLoading={loadingBatch}
+        width={600}
+      >
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ fontSize: '13px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '6px' }}>Chọn khung chương trình:</label>
+          <Select
+            mode="multiple"
+            style={{ width: '100%' }}
+            placeholder="Chọn các khung chương trình…"
+            value={batchProgramIds}
+            onChange={handleBatchProgramChange}
+            options={programs.map((p: any) => ({ label: `${p.name} (K${p.batch})`, value: p.id }))}
+          />
+        </div>
+
+        {batchProgramIds.map(pid => {
+          const prog = programs.find((p: any) => p.id === pid);
+          const semesters = batchEntries[pid] || [];
+          return (
+            <Card
+              key={pid}
+              size="small"
+              title={<span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>Chương trình: {prog?.name} (K{prog?.batch})</span>}
+              style={{ marginBottom: '12px' }}
+            >
+              {semesters.map((sem, idx) => (
+                <Row gutter={12} key={idx} style={{ marginBottom: '8px' }} align="middle">
+                  <Col flex="auto">
+                    <Select
+                      style={{ width: '100%' }}
+                      value={sem}
+                      onChange={(val) => updateSemesterValue(pid, idx, val)}
+                      options={[1,2,3,4,5,6,7,8].map(n => ({ label: `Học Kì ${n}`, value: n }))}
+                    />
+                  </Col>
+                  <Col>
+                    <Button type="link" danger size="small" onClick={() => removeSemesterFromProgram(pid, idx)}>Xóa</Button>
+                  </Col>
+                </Row>
+              ))}
+              <Button
+                type="dashed"
+                size="small"
+                block
+                icon={<PlusOutlined />}
+                onClick={() => addSemesterToProgram(pid)}
+                style={{ marginTop: '4px' }}
+              >
+                Thêm kì khác cho chương trình này
+              </Button>
+            </Card>
+          );
+        })}
+
+        {batchProgramIds.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)', fontSize: '13px' }}>
+            Hãy chọn ít nhất 1 khung chương trình ở trên.
+          </div>
+        )}
       </Modal>
 
     </div>
