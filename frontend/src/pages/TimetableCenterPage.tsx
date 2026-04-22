@@ -31,12 +31,13 @@ const DraggableLecturerCard = ({ lecturer, stats }: { lecturer: any; stats: LecS
 
   const { hours, subjects, classes, slots } = stats;
   const pct = Math.min(100, Math.round((hours / 160) * 100));
-  const barColor = hours >= 250 ? '#ff4d4f' : hours >= 160 ? '#52c41a' : '#1677ff';
+  const barColor = hours >= 250 ? 'var(--color-danger)' : hours >= 160 ? 'var(--color-success)' : 'var(--color-primary)';
 
   return (
     <div
-      ref={setNodeRef} {...listeners} {...attributes} style={style}
-      className="bg-white border border-slate-200 rounded-lg p-2.5 mb-2 cursor-grab shadow-sm hover:border-blue-400 transition-all"
+      ref={setNodeRef} {...listeners} {...attributes}
+      style={{...style, boxShadow: 'var(--shadow-sm)', transition: 'border-color 0.15s, box-shadow 0.15s' }}
+      className="bg-white border border-slate-200 rounded-lg p-2.5 mb-2 cursor-grab hover:border-orange-300"
     >
       <div className="flex justify-between items-center mb-1">
         <span className="font-semibold text-sm text-slate-800 truncate" title={lecturer.full_name}>{lecturer.full_name}</span>
@@ -60,9 +61,9 @@ const DraggableLecturerCard = ({ lecturer, stats }: { lecturer: any; stats: LecS
 };
 
 const LecturerDragOverlay = ({ lecturer }: { lecturer: any }) => (
-  <div className="bg-white border-2 border-blue-500 rounded-lg p-2.5 shadow-2xl text-sm w-64 pointer-events-none">
-    <div className="font-semibold text-blue-700">{lecturer.full_name}</div>
-    <div className="text-xs text-gray-500">{lecturer.lecturer_code}</div>
+  <div style={{ background: 'white', border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-md)', padding: '10px', boxShadow: 'var(--shadow-dropdown)', fontSize: '13px', width: '240px', pointerEvents: 'none' }}>
+    <div style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{lecturer.full_name}</div>
+    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{lecturer.lecturer_code}</div>
   </div>
 );
 
@@ -70,7 +71,7 @@ const DroppableCell = ({ rowId, field, children }: { rowId: number; field: strin
   const dropId = `${rowId}-${field}`;
   const { setNodeRef, isOver } = useDroppable({ id: dropId, data: { rowId, field } });
   return (
-    <div ref={setNodeRef} className={`min-h-[32px] rounded transition-colors ${isOver ? 'bg-blue-100 ring-2 ring-blue-400' : ''}`}>
+    <div ref={setNodeRef} style={{ minHeight: '32px', borderRadius: 'var(--radius-sm)', transition: 'background-color 0.12s, box-shadow 0.12s', backgroundColor: isOver ? 'var(--color-primary-bg)' : 'transparent', boxShadow: isOver ? 'inset 0 0 0 2px var(--color-primary)' : 'none' }}>
       {children}
     </div>
   );
@@ -435,27 +436,28 @@ export default function TimetableCenterPage() {
 
     return (
       <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex h-full bg-slate-50">
+        <div style={{ display: 'flex', height: '100%', background: 'var(--color-bg)' }}>
           {/* LEFT: Main Table */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Toolbar */}
-            <div className="bg-white p-3 border-b border-slate-200 flex justify-between items-center shadow-sm">
-              <div className="flex items-center gap-3">
-                <Button onClick={() => setSelectedSessionId(null)}>← Quay lại</Button>
-                <Text strong className="text-base text-blue-800">
+            <div style={{ background: 'var(--color-white)', padding: '10px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Button size="small" onClick={() => { setSelectedSessionId(null); setFocusedSubjectId(null); }}>← Quay lại</Button>
+                <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }}>
                   {curSession?.plan_name}
-                </Text>
+                </span>
                 <Tag color={curSession?.status === 'ACTIVE' ? 'green' : 'default'}>{curSession?.status}</Tag>
               </div>
               <Space>
-                <Button icon={<DownloadOutlined />} onClick={handleExport}>
-                  Export Excel
-                </Button>
+                <Tooltip title="Xuất file Excel TKB">
+                  <Button icon={<DownloadOutlined />} onClick={handleExport} aria-label="Xuất file Excel">
+                    Export Excel
+                  </Button>
+                </Tooltip>
                 <Button 
                   type="primary" 
                   icon={<ThunderboltOutlined />} 
                   onClick={() => setIsAutoAssignModalOpen(true)}
-                  className="bg-gradient-to-r from-purple-500 to-blue-500 border-none"
                 >
                   ⚡ Auto-Assign
                 </Button>
@@ -501,12 +503,12 @@ export default function TimetableCenterPage() {
           </div>
 
           {/* RIGHT: Sidebar Pool GV */}
-          <div className="w-72 bg-white border-l border-slate-200 flex flex-col shadow-lg">
-            <div className="p-3 border-b border-slate-200 bg-slate-50">
+          <div style={{ width: '280px', background: 'var(--color-white)', borderLeft: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', boxShadow: '-2px 0 8px rgba(0,0,0,0.04)' }}>
+            <div style={{ padding: '12px', borderBottom: '1px solid var(--color-border-light)', background: 'var(--color-bg)' }}>
               {focusedSubjectId ? (
                 <>
-                  <div className="font-bold text-green-700 mb-1">✅ GV có thể dạy:</div>
-                  <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded mb-2 truncate" title={focusedSubjectName || ''}>
+                  <div style={{ fontWeight: 700, color: 'var(--color-success)', marginBottom: '4px', fontSize: '13px' }}>✅ GV có thể dạy:</div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-success)', background: 'var(--color-success-bg)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', marginBottom: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={focusedSubjectName || ''}>
                     {focusedSubjectName}
                   </div>
                   <Button size="small" type="link" className="p-0 text-xs" onClick={() => setFocusedSubjectId(null)}>
@@ -515,10 +517,10 @@ export default function TimetableCenterPage() {
                 </>
               ) : (
                 <>
-                  <div className="font-bold text-slate-700 mb-2">🎓 Pool Giảng Viên</div>
+                  <div style={{ fontWeight: 700, color: 'var(--color-text)', marginBottom: '8px', fontSize: '13px' }}>🎓 Pool Giảng Viên</div>
                   <Input 
                     prefix={<SearchOutlined className="text-slate-400" />}
-                    placeholder="Tìm tên / mã GV..."
+                    placeholder="Tìm tên / mã GV…"
                     size="small"
                     allowClear
                     value={lecSearch}
@@ -621,18 +623,18 @@ export default function TimetableCenterPage() {
 
   // --- SESSION LIST VIEW ---
   return (
-    <div className="p-6 h-full bg-slate-50">
-      <Space className="w-full mb-6" style={{ display: 'flex', justifyContent: 'space-between' }}>
-        <Title level={3} className="!mb-0 text-slate-700">TKB Trung Tâm</Title>
-        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => setIsWizardOpen(true)}>
+    <div style={{ height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Workspace TKB</h2>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsWizardOpen(true)}>
           Khởi tạo Đợt TKB mới
         </Button>
-      </Space>
+      </div>
 
       <Row gutter={[16, 16]}>
         {sessions.map(s => (
           <Col span={8} key={s.session_id}>
-            <Card hoverable className="h-full border-t-4 border-t-blue-500 shadow-sm" actions={[
+            <Card hoverable className="h-full" style={{ borderTop: '3px solid var(--color-primary)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-card)' }} actions={[
               <Button type="link" icon={<EyeOutlined />} onClick={() => loadSessionDetails(s.session_id)}>Truy cập Workspace</Button>,
               <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDeleteSession(s.session_id)}>Xóa</Button>
             ]}>
@@ -711,7 +713,7 @@ export default function TimetableCenterPage() {
             {wizardConfig.program_ids.map(p_id => {
               const prog = programs.find(p => p.id === p_id);
               return (
-                <Card key={p_id} title={<span className="text-blue-700">Chương trình: {prog?.name}</span>} size="small">
+                <Card key={p_id} title={<span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>Chương trình: {prog?.name}</span>} size="small">
                   {entriesConfig[p_id]?.map((cfg: any, i: number) => (
                     <Row gutter={16} key={i} className="mb-2">
                       <Col span={10}>

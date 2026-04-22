@@ -1,11 +1,110 @@
 @import "tailwindcss";
 
+/* ===== DESIGN TOKENS ===== */
+:root {
+  /* Brand Colors — University */
+  --color-primary: #f37423;
+  --color-primary-light: #ff9a5c;
+  --color-primary-dark: #d45f15;
+  --color-primary-bg: #fff7f0;
+
+  /* Accent — Navy */
+  --color-accent: #00358f;
+  --color-accent-light: #1a4fa0;
+  --color-accent-bg: #eef2fa;
+
+  /* Neutrals */
+  --color-white: #ffffff;
+  --color-bg: #f8f9fb;
+  --color-border: #e2e5ea;
+  --color-border-light: #f0f1f3;
+  --color-text: #1e293b;
+  --color-text-secondary: #64748b;
+  --color-text-muted: #94a3b8;
+
+  /* Semantic */
+  --color-success: #16a34a;
+  --color-success-bg: #f0fdf4;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+
+  /* Spacing / Radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --shadow-dropdown: 0 10px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* ===== BASE RESET ===== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text);
+  background-color: var(--color-bg);
   min-width: 320px;
   min-height: 100vh;
+}
+
+/* ===== TYPOGRAPHY ===== */
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+/* ===== TABULAR NUMBERS ===== */
+.tabular-nums,
+td[data-col-type="number"],
+.ant-table-cell:has(.tabular-nums) {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ===== TOUCH & INTERACTION ===== */
+button,
+a,
+[role="button"],
+.ant-btn,
+.ant-select,
+.ant-tag {
+  touch-action: manipulation;
+}
+
+/* ===== REDUCED MOTION ===== */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ===== SCROLLBAR ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar {
@@ -20,4 +119,56 @@ body {
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: #94a3b8;
+}
+
+/* ===== MODAL CONTAINMENT ===== */
+.ant-modal-wrap {
+  overscroll-behavior: contain;
+}
+
+/* ===== SKIP LINK (Accessibility) ===== */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--color-primary);
+  color: white;
+  padding: 8px 16px;
+  z-index: 9999;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 0 0 var(--radius-md) 0;
+  transition: top 0.2s;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* ===== ANT DESIGN OVERRIDES (Brand) ===== */
+.ant-btn-primary {
+  background-color: var(--color-primary) !important;
+  border-color: var(--color-primary) !important;
+}
+.ant-btn-primary:hover {
+  background-color: var(--color-primary-dark) !important;
+  border-color: var(--color-primary-dark) !important;
+}
+
+/* Primary link color */
+a {
+  color: var(--color-accent);
+}
+a:hover {
+  color: var(--color-accent-light);
+}
+
+/* ===== LOADING ELLIPSIS ===== */
+.loading-dots::after {
+  content: '…';
+  animation: dots 1.4s infinite;
+}
+@keyframes dots {
+  0%, 20% { content: '.'; }
+  40% { content: '..'; }
+  60%, 100% { content: '…'; }
 }

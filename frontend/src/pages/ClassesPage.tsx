@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Input, Select, Modal, Form, Tag, message, Typography, Space, Row, Col } from 'antd';
-import { PlusOutlined, LinkOutlined, DisconnectOutlined } from '@ant-design/icons';
+import { Card, Table, Button, Input, Select, Modal, Form, Tag, message, Space, Row, Col, Empty } from 'antd';
+import { PlusOutlined, LinkOutlined, SearchOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 
-const { Title } = Typography;
+
 
 const MAJORS = [
   { value: 'CNTT', label: 'Công nghệ Thông tin' },
@@ -115,7 +115,7 @@ export default function ClassesPage() {
 
   const columns = [
     { title: 'STT', key: 'idx', width: 60, align: 'center' as const, render: (_: any, __: any, index: number) => index + 1 },
-    { title: 'Tên Lớp', dataIndex: 'class_name', key: 'class_name', className: 'font-semibold text-blue-800' },
+    { title: 'Tên Lớp', dataIndex: 'class_name', key: 'class_name', render: (val: string) => <span style={{ fontWeight: 600, color: 'var(--color-accent)' }}>{val}</span> },
     { title: 'Dịch vụ Mảng', dataIndex: 'department_major', key: 'department_major', width: 120 },
     { title: 'Khóa', dataIndex: 'batch', key: 'batch', width: 80, align: 'center' as const, render: (val: string) => `K${val}` },
     { 
@@ -153,45 +153,50 @@ export default function ClassesPage() {
   ];
 
   return (
-    <div className="p-6 h-full bg-slate-50">
-      <Space className="w-full mb-6" justify="space-between">
-        <Title level={3} className="!mb-0 text-slate-700">Quản lý Lớp & Sinh viên</Title>
-        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
-          Tạo Lớp Học Mới
+    <div style={{ height: '100%' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Quản lý Lớp Cố định</h2>
+        <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsCreateModalOpen(true)}>
+          Tạo Lớp Mới
         </Button>
-      </Space>
+      </div>
 
-      <Card className="shadow-sm">
+      <div style={{ background: 'var(--color-white)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}>
         {/* Filters Top Bar */}
-        <div className="bg-slate-100 p-4 rounded-lg mb-4 flex space-x-4 items-center">
-          <div className="font-semibold text-slate-600">Bộ lọc thông minh:</div>
-          <Select 
-            className="w-64" 
-            placeholder="Lọc theo Ngành" 
-            options={MAJORS} 
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--color-border-light)', display: 'flex', gap: '12px', alignItems: 'center' }}>
+          <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>Bộ lọc:</span>
+          <Select
+            style={{ width: 240 }}
+            placeholder="Lọc theo Ngành…"
+            options={MAJORS}
             allowClear
             value={filterMajor}
             onChange={setFilterMajor}
           />
-          <Input 
-            className="w-40" 
-            placeholder="Lọc theo Khóa (VD: 19)" 
+          <Input
+            style={{ width: 160 }}
+            placeholder="Khóa (VD: 19)…"
             allowClear
-            value={filterBatch}
-            onChange={e => setFilterBatch(e.target.value)}
+            value={filterBatch || ''}
+            onChange={e => setFilterBatch(e.target.value || null)}
+            name="filter-batch"
+            autoComplete="off"
           />
         </div>
 
         {/* Data Table */}
-        <Table 
-          columns={columns} 
-          dataSource={classes} 
-          rowKey="class_id"
-          loading={loading}
-          pagination={{ pageSize: 15 }}
-          size="middle"
-        />
-      </Card>
+        <div style={{ padding: '0 24px 24px' }}>
+          <Table
+            columns={columns}
+            dataSource={classes}
+            rowKey="class_id"
+            loading={loading}
+            pagination={{ pageSize: 15, showTotal: (total) => `${total} lớp` }}
+            size="middle"
+            locale={{ emptyText: <Empty description="Không có lớp nào" /> }}
+          />
+        </div>
+      </div>
 
       {/* CREATE MODAL */}
       <Modal

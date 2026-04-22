@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Table, Modal, Form, Input, Select, message, Upload, Empty } from 'antd';
-import { PlusOutlined, UploadOutlined, SolutionOutlined } from '@ant-design/icons';
+import { PlusOutlined, UploadOutlined, SolutionOutlined, SearchOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 
 interface Program {
@@ -89,7 +89,9 @@ const CurriculumPage: React.FC = () => {
   return (
     <div className="flex h-full space-x-4">
       {/* Left Panel: Program List */}
-      <Card className="w-1/3 flex flex-col h-full overflow-hidden" title="Khung Chương Trình" 
+      <Card 
+        style={{ width: '33%', boxShadow: 'var(--shadow-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', overflow: 'hidden' }}
+        title={<span style={{ fontWeight: 600 }}>Khung Chương Trình</span>}
         extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Thêm mới</Button>}
         bodyStyle={{ padding: 0, overflowY: 'auto' }}>
         <div className="flex flex-col">
@@ -100,9 +102,10 @@ const CurriculumPage: React.FC = () => {
               <div 
                 key={prog.id} 
                 onClick={() => handleSelectProgram(prog)}
-                className={`p-4 border-b cursor-pointer transition-colors ${selectedProgram?.id === prog.id ? 'bg-blue-50 border-l-4 border-l-blue-500' : 'hover:bg-gray-50'}`}
+                className={`p-4 border-b cursor-pointer transition-colors ${selectedProgram?.id === prog.id ? 'border-l-4' : 'hover:bg-gray-50'}`}
+                style={selectedProgram?.id === prog.id ? { backgroundColor: 'var(--color-primary-bg)', borderLeftColor: 'var(--color-primary)' } : {}}
               >
-                <div className="font-semibold text-blue-800 text-base">{prog.name}</div>
+                <div style={{ fontWeight: 600, color: 'var(--color-accent)', fontSize: '14px' }}>{prog.name}</div>
                 <div className="text-gray-500 text-sm mt-1">Mã: {prog.program_code} - Khóa {prog.batch}</div>
               </div>
             ))
@@ -111,8 +114,9 @@ const CurriculumPage: React.FC = () => {
       </Card>
 
       {/* Right Panel: Content & Import */}
-      <Card className="w-2/3 flex flex-col h-full" 
-        title={selectedProgram ? `Chi tiết: ${selectedProgram.name}` : "Chọn 1 chương trình để xem"} 
+      <Card 
+        style={{ width: '67%', boxShadow: 'var(--shadow-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' }}
+        title={<span style={{ fontWeight: 600 }}>{selectedProgram ? `Chi tiết: ${selectedProgram.name}` : 'Chọn 1 chương trình để xem'}</span>}
         extra={
           selectedProgram && (
             <Upload 

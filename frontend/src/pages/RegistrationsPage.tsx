@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Select, Button, Modal, message, Upload, Input, Form, Table } from 'antd';
-import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Select, Button, Modal, message, Upload, Input, Form, Table, Tag, Tooltip, Popover, Checkbox } from 'antd';
+import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined, FilterOutlined, SortAscendingOutlined, SortDescendingOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -43,13 +43,13 @@ const DraggableLecturer = ({ lecturer, assignCount }: { lecturer: Lecturer; assi
       ref={setNodeRef} 
       {...listeners} 
       {...attributes}
-      style={style}
-      className="bg-white border border-slate-300 rounded p-2 mb-2 cursor-grab shadow-sm text-sm hover:border-blue-400 relative"
+      style={{...style, boxShadow: 'var(--shadow-sm)', transition: 'border-color 0.15s' }}
+      className="bg-white border border-slate-300 rounded p-2 mb-2 cursor-grab text-sm hover:border-orange-300 relative"
     >
       <div className="flex justify-between items-center">
         <div className="font-semibold">{lecturer.full_name}</div>
         {assignCount > 0 && (
-          <span className="bg-blue-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center flex-shrink-0">
+          <span style={{ background: 'var(--color-primary)', color: 'white', fontSize: '10px', fontWeight: 700, borderRadius: '50%', width: '18px', height: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             {assignCount}
           </span>
         )}
@@ -61,9 +61,9 @@ const DraggableLecturer = ({ lecturer, assignCount }: { lecturer: Lecturer; assi
 
 // Overlay hiển thị khi đang kéo (nổi trên mọi element)
 const LecturerOverlay = ({ lecturer }: { lecturer: Lecturer }) => (
-  <div className="bg-white border-2 border-blue-500 rounded p-2 shadow-xl text-sm w-72 pointer-events-none">
-    <div className="font-semibold text-blue-700">{lecturer.full_name}</div>
-    <div className="text-xs text-gray-500">{lecturer.lecturer_code} - {lecturer.type}</div>
+  <div style={{ background: 'white', border: '2px solid var(--color-primary)', borderRadius: 'var(--radius-md)', padding: '8px 10px', boxShadow: 'var(--shadow-dropdown)', fontSize: '13px', width: '280px', pointerEvents: 'none' }}>
+    <div style={{ fontWeight: 600, color: 'var(--color-primary)' }}>{lecturer.full_name}</div>
+    <div style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{lecturer.lecturer_code} – {lecturer.type}</div>
   </div>
 );
 
@@ -75,16 +75,19 @@ const DroppableSubjectArea = ({ type, subject, assignments, removeAssignment }: 
   return (
     <div 
       ref={setNodeRef} 
-      className={`min-h-[60px] p-2 rounded border-2 border-dashed transition-colors ${
-        isOver ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50'
-      }`}
+      style={{
+        minHeight: '60px', padding: '8px', borderRadius: 'var(--radius-md)',
+        border: isOver ? '2px solid var(--color-primary)' : '2px dashed var(--color-border)',
+        backgroundColor: isOver ? 'var(--color-primary-bg)' : 'var(--color-bg)',
+        transition: 'border-color 0.12s, background-color 0.12s'
+      }}
     >
       <div className="text-xs text-slate-500 mb-2 font-medium">
         {type === 'main' ? 'Giảng viên Lý thuyết' : 'Giảng viên Thực hành'}
       </div>
       <div className="flex flex-wrap gap-2">
         {assignments.map((asst: any, idx: number) => (
-          <div key={idx} className={`flex items-center text-xs px-2 py-1 rounded border ${type === 'main' ? 'bg-blue-100 border-blue-200 text-blue-800' : 'bg-gray-100 border-gray-200 text-gray-800'}`}>
+          <div key={idx} style={{ display: 'flex', alignItems: 'center', fontSize: '12px', padding: '3px 8px', borderRadius: 'var(--radius-sm)', border: `1px solid ${type === 'main' ? '#e0e7ff' : 'var(--color-border)'}`, background: type === 'main' ? '#eef2ff' : 'var(--color-bg)', color: type === 'main' ? 'var(--color-accent)' : 'var(--color-text)' }}>
             <span>{asst.lecturer_name}</span>
             <CloseOutlined className="ml-2 cursor-pointer hover:text-red-500" onClick={() => removeAssignment(subject.subject_id, asst.lecturer_id, type === 'main')} />
           </div>
@@ -118,17 +121,31 @@ const RegistrationsPage: React.FC = () => {
   const [missingLecturers, setMissingLecturers] = useState<any[]>([]);
   const [draftAssignments, setDraftAssignments] = useState<any[]>([]);
 
+  // ---- SUBJECT FILTER BY CURRICULUM ----
+  const [programs, setPrograms] = useState<any[]>([]);
+  const [filterProgramIds, setFilterProgramIds] = useState<number[]>([]);
+  const [filterSemester, setFilterSemester] = useState<number | null>(null);
+  const [filteredSubjectIds, setFilteredSubjectIds] = useState<Set<number> | null>(null);
+  const [loadingFilter, setLoadingFilter] = useState(false);
+  const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
+
+  // ---- LECTURER FILTER + SORT ----
+  const [lecTypeFilter, setLecTypeFilter] = useState<string | null>(null); // 'Cơ hữu' | 'Thỉnh giảng' | null
+  const [lecSortOrder, setLecSortOrder] = useState<'asc' | 'desc' | null>(null); // sort by assignCount
+
   // Load Initial Data
   const fetchBaseData = async () => {
     try {
-      const [resLists, resLecs, resSubs] = await Promise.all([
+      const [resLists, resLecs, resSubs, resProgs] = await Promise.all([
         apiClient.get('/registrations/lists'),
         apiClient.get('/lecturers/'),
-        apiClient.get('/subjects/')
+        apiClient.get('/subjects/'),
+        apiClient.get('/programs/')
       ]);
       setLists(resLists.data);
       setLecturers(resLecs.data);
       setSubjects(resSubs.data);
+      setPrograms(resProgs.data);
       if (resLists.data.length > 0 && !selectedListId) {
         setSelectedListId(resLists.data[0].list_id);
       }
@@ -312,14 +329,63 @@ const RegistrationsPage: React.FC = () => {
     }
   };
 
-  const filteredLecturers = lecturers.filter(l => l.full_name.toLowerCase().includes(searchTerm.toLowerCase()) || l.lecturer_code.toLowerCase().includes(searchTerm.toLowerCase()));
+  // --- APPLY CURRICULUM FILTER ---
+  const applyCurriculumFilter = async () => {
+    if (filterProgramIds.length === 0 || !filterSemester) {
+      message.warning('Vui lòng chọn ít nhất 1 khung chương trình và 1 kì học');
+      return;
+    }
+    setLoadingFilter(true);
+    try {
+      const ids = new Set<number>();
+      for (const pid of filterProgramIds) {
+        const res = await apiClient.get(`/programs/${pid}/curriculum`);
+        const items = res.data.filter((c: any) => c.semester_index === filterSemester);
+        items.forEach((c: any) => ids.add(c.subject_id));
+      }
+      setFilteredSubjectIds(ids);
+      setFilterPopoverOpen(false);
+      message.success(`Đã lọc: ${ids.size} môn học phù hợp`);
+    } catch {
+      message.error('Lỗi khi tải dữ liệu chương trình');
+    } finally {
+      setLoadingFilter(false);
+    }
+  };
+
+  const clearCurriculumFilter = () => {
+    setFilteredSubjectIds(null);
+    setFilterProgramIds([]);
+    setFilterSemester(null);
+  };
+
+  // --- DISPLAY SUBJECTS (filtered) ---
+  const displaySubjects = filteredSubjectIds
+    ? subjects.filter(s => filteredSubjectIds.has(s.subject_id))
+    : subjects;
+
+  // --- FILTERED + SORTED LECTURERS ---
+  let filteredLecturers = lecturers.filter(l =>
+    l.full_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    l.lecturer_code.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+  if (lecTypeFilter) {
+    filteredLecturers = filteredLecturers.filter(l => l.type === lecTypeFilter);
+  }
+  if (lecSortOrder) {
+    filteredLecturers = [...filteredLecturers].sort((a, b) => {
+      const countA = getAssignCount(a.lecturer_id);
+      const countB = getAssignCount(b.lecturer_id);
+      return lecSortOrder === 'asc' ? countA - countB : countB - countA;
+    });
+  }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50">
+    <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 76px)', overflow: 'hidden' }}>
       {/* TOOLBAR */}
-      <div className="bg-white p-4 border-b border-slate-200 flex justify-between items-center shadow-sm">
-        <div className="flex items-center space-x-4">
-          <span className="font-semibold text-slate-700">Phiên bản Phân công:</span>
+      <div style={{ background: 'var(--color-white)', padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Phiên bản:</span>
           <Select 
             className="w-64" 
             value={selectedListId} 
@@ -378,15 +444,76 @@ const RegistrationsPage: React.FC = () => {
 
       {/* DND WORKSPACE */}
       <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex flex-1 overflow-hidden p-4 space-x-4">
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: '16px', gap: '16px' }}>
           
           {/* LEFT COLUMN: SUBJECTS */}
-          <div className="flex-1 bg-white border border-slate-200 rounded-lg p-4 custom-scrollbar overflow-y-auto">
-            <h3 className="font-semibold mb-4 text-slate-700">Danh sách Môn Học (Khung TKB)</h3>
+          <div style={{ flex: 1, background: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Danh sách Môn Học</h3>
+                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>({displaySubjects.length} môn)</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {filteredSubjectIds && (
+                  <Tag color="orange" closable onClose={clearCurriculumFilter} style={{ margin: 0, fontSize: '11px' }}>
+                    Đang lọc: {filteredSubjectIds.size} môn
+                  </Tag>
+                )}
+                <Popover
+                  title={<span style={{ fontWeight: 600 }}>Lọc môn theo Đợt học</span>}
+                  trigger="click"
+                  open={filterPopoverOpen}
+                  onOpenChange={setFilterPopoverOpen}
+                  placement="bottomRight"
+                  content={
+                    <div style={{ width: '320px' }}>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Khung chương trình:</label>
+                        <Select
+                          mode="multiple"
+                          style={{ width: '100%' }}
+                          placeholder="Chọn khung chương trình…"
+                          value={filterProgramIds}
+                          onChange={setFilterProgramIds}
+                          options={programs.map(p => ({ label: `${p.name} (K${p.batch})`, value: p.id }))}
+                          maxTagCount={2}
+                        />
+                      </div>
+                      <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Học kì:</label>
+                        <Select
+                          style={{ width: '100%' }}
+                          placeholder="Chọn học kì…"
+                          value={filterSemester}
+                          onChange={setFilterSemester}
+                          options={[1,2,3,4,5,6,7,8].map(n => ({ label: `Học kì ${n}`, value: n }))}
+                        />
+                      </div>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                        <Button size="small" onClick={() => { clearCurriculumFilter(); setFilterPopoverOpen(false); }}>Xóa lọc</Button>
+                        <Button size="small" type="primary" onClick={applyCurriculumFilter} loading={loadingFilter}>Áp dụng</Button>
+                      </div>
+                    </div>
+                  }
+                >
+                  <Tooltip title="Lọc môn theo đợt học">
+                    <Button size="small" icon={<FilterOutlined />} type={filteredSubjectIds ? 'primary' : 'default'} />
+                  </Tooltip>
+                </Popover>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }} className="custom-scrollbar">
             {!selectedListId && <div className="text-red-500 italic">Vui lòng chọn/tạo 1 phiên bản trước khi rải môn.</div>}
-            {selectedListId && subjects.map(subj => (
+            {selectedListId && displaySubjects.length === 0 && filteredSubjectIds && (
+              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-muted)' }}>
+                <FilterOutlined style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.4 }} />
+                <div>Không có môn nào phù hợp với bộ lọc đã chọn.</div>
+                <Button size="small" type="link" onClick={clearCurriculumFilter}>Xóa bộ lọc</Button>
+              </div>
+            )}
+            {selectedListId && displaySubjects.map(subj => (
               <div key={subj.subject_id} className="mb-4 border border-slate-200 rounded-lg">
-                <div className="bg-slate-100 p-2 border-b border-slate-200 font-medium text-blue-900 rounded-t-lg">
+                <div style={{ background: 'var(--color-bg)', padding: '8px 12px', borderBottom: '1px solid var(--color-border-light)', fontWeight: 600, color: 'var(--color-accent)', borderRadius: 'var(--radius-md) var(--radius-md) 0 0', fontSize: '13px' }}>
                   {subj.subject_code} - {subj.subject_name}
                 </div>
                 <div className="p-3 grid grid-cols-2 gap-4">
@@ -405,18 +532,63 @@ const RegistrationsPage: React.FC = () => {
                 </div>
               </div>
             ))}
+            </div>
           </div>
 
           {/* RIGHT COLUMN: LECTURER POOL */}
-          <div className="w-80 bg-white border border-slate-200 rounded-lg p-4 flex flex-col">
-            <h3 className="font-semibold mb-2 text-slate-700">Pool Giảng Viên</h3>
-            <Input.Search 
-              placeholder="Tìm tên hoặc mã GV..." 
-              className="mb-4"
-              allowClear
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-            <div className="custom-scrollbar overflow-y-auto flex-1 pr-2">
+          <div style={{ width: '300px', background: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Pool Giảng Viên</h3>
+                <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{filteredLecturers.length}/{lecturers.length}</span>
+              </div>
+              <Input.Search
+                placeholder="Tìm tên hoặc mã GV…"
+                size="small"
+                allowClear
+                onChange={(e) => setSearchTerm(e.target.value)}
+                style={{ marginBottom: '8px' }}
+              />
+              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                <Tag.CheckableTag
+                  checked={lecTypeFilter === null}
+                  onChange={() => setLecTypeFilter(null)}
+                  style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
+                >
+                  Tất cả
+                </Tag.CheckableTag>
+                <Tag.CheckableTag
+                  checked={lecTypeFilter === 'Cơ hữu'}
+                  onChange={(checked) => setLecTypeFilter(checked ? 'Cơ hữu' : null)}
+                  style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
+                >
+                  Cơ hữu
+                </Tag.CheckableTag>
+                <Tag.CheckableTag
+                  checked={lecTypeFilter === 'Thỉnh giảng'}
+                  onChange={(checked) => setLecTypeFilter(checked ? 'Thỉnh giảng' : null)}
+                  style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
+                >
+                  Thỉnh giảng
+                </Tag.CheckableTag>
+                <div style={{ marginLeft: 'auto' }}>
+                  <Tooltip title={lecSortOrder === 'asc' ? 'Đang: Ít → Nhiều. Bấm đổi' : lecSortOrder === 'desc' ? 'Đang: Nhiều → Ít. Bấm tắt' : 'Sắp xếp theo số môn'}>
+                    <Button
+                      size="small"
+                      type={lecSortOrder ? 'primary' : 'default'}
+                      icon={lecSortOrder === 'desc' ? <SortDescendingOutlined /> : <SortAscendingOutlined />}
+                      onClick={() => {
+                        if (!lecSortOrder) setLecSortOrder('asc');
+                        else if (lecSortOrder === 'asc') setLecSortOrder('desc');
+                        else setLecSortOrder(null);
+                      }}
+                      style={{ padding: '0 6px' }}
+                    />
+                  </Tooltip>
+                </div>
+              </div>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }} className="custom-scrollbar">
               {filteredLecturers.map(lec => (
                 <DraggableLecturer key={lec.lecturer_id} lecturer={lec} assignCount={getAssignCount(lec.lecturer_id)} />
               ))}
