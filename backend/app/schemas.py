@@ -213,3 +213,43 @@ class AutoAssignResult(BaseModel):
     slot_assigned_count: int = 0
     warnings: List[str] = []
 
+
+# --- Lecturer Profile Schemas ---
+class LecturerRegistrationItem(BaseModel):
+    subject_id: int
+    subject_code: str
+    subject_name: str
+    credits: int
+    is_main_lecturer: bool
+    list_id: int
+    list_name: str
+
+class LecturerTimetableRowItem(BaseModel):
+    row_id: int
+    session_id: int
+    plan_name: str
+    class_name: str
+    subject_code: str
+    subject_name: str
+    theory_hours: int
+    practice_hours: int
+    fixed_shift: Optional[str]
+    morning_day: Optional[str]
+    afternoon_day: Optional[str]
+    role: str  # "LT" or "TH"
+
+class LecturerTimetableSessionItem(BaseModel):
+    session_id: int
+    plan_name: str
+    status: str
+
+class LecturerTimetableSummary(BaseModel):
+    total_classes: int
+    total_subjects: int
+    total_hours: int
+    slots: List[str]  # e.g. ["Sáng T2", "Chiều T3"]
+
+class LecturerTimetableInfoResponse(BaseModel):
+    sessions: List[LecturerTimetableSessionItem]
+    rows: List[LecturerTimetableRowItem]
+    summary: LecturerTimetableSummary
