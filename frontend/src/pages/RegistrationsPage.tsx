@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Select, Button, Modal, message, Upload, Input, Form, Table } from 'antd';
-import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -165,6 +165,28 @@ const RegistrationsPage: React.FC = () => {
     }
   };
 
+  const handleDeleteList = (listId: number) => {
+    Modal.confirm({
+      title: 'Xác nhận xóa',
+      content: 'Bạn có chắc chắn muốn xóa phiên bản phân công này? Mọi dữ liệu phân công bên trong sẽ bị mất.',
+      okText: 'Xóa',
+      okButtonProps: { danger: true },
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          await apiClient.delete(`/registrations/lists/${listId}`);
+          message.success("Đã xóa phiên bản phân công");
+          setLists(lists.filter(l => l.list_id !== listId));
+          if (selectedListId === listId) {
+            setSelectedListId(null);
+          }
+        } catch (e: any) {
+          message.error("Lỗi khi xóa phiên bản");
+        }
+      }
+    });
+  };
+
   // Import Analyze Handler
   const handleUploadExcel = async (file: File) => {
     if (!selectedListId) {
@@ -302,9 +324,27 @@ const RegistrationsPage: React.FC = () => {
             className="w-64" 
             value={selectedListId} 
             onChange={setSelectedListId}
-            options={lists.map(l => ({ label: l.list_name, value: l.list_id }))}
             placeholder="-- Chọn danh sách --"
-          />
+            optionLabelProp="label"
+          >
+            {lists.map(l => (
+              <Select.Option key={l.list_id} value={l.list_id} label={l.list_name}>
+                <div className="flex justify-between items-center w-full">
+                  <span>{l.list_name}</span>
+                  <DeleteOutlined 
+                    className="text-red-400 hover:text-red-600 ml-2" 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteList(l.list_id);
+                    }} 
+                  />
+                </div>
+              </Select.Option>
+            ))}
+          </Select>
+          {selectedListId && (
+            <Button danger icon={<DeleteOutlined />} onClick={() => handleDeleteList(selectedListId)} title="Xóa Phiên bản đang chọn" />
+          )}
           <Button icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Tạo Nháp mới</Button>
           <Upload beforeUpload={handleUploadExcel} showUploadList={false} accept=".xlsx, .xls">
             <Button icon={<CloudUploadOutlined />} disabled={!selectedListId}>Import Excel</Button>

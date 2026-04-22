@@ -206,3 +206,10 @@ class TimetableRowUpdate(BaseModel):
     afternoon_day: Optional[str] = None
     main_lecturer_id: Optional[int] = None
     prac_lecturer_id: Optional[int] = None
+
+class AutoAssignResult(BaseModel):
+    assigned_count: int
+    unassigned_count: int
+    slot_assigned_count: int = 0
+    warnings: List[str] = []
+
