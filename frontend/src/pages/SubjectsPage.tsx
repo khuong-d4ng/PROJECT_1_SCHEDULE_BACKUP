@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Table, Button, Modal, Form, Input, InputNumber, message, Empty } from 'antd';
-import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, InputNumber, message, Empty, Drawer, Descriptions, Tag, Space } from 'antd';
+import { PlusOutlined, SearchOutlined, BookOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 
 interface Subject {
@@ -20,7 +20,12 @@ const SubjectsPage: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [searchText, setSearchText] = useState('');
-  const [form] = Form.useForm();
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
+  const [editForm] = Form.useForm();
+  const form = Form.useForm()[0];
+  const watchTheory = Form.useWatch('theory_credits', editForm) || 0;
+  const watchPractice = Form.useWatch('practice_credits', editForm) || 0;
 
   const fetchSubjects = async () => {
     setLoading(true);
@@ -57,6 +62,40 @@ const SubjectsPage: React.FC = () => {
       setSubmitting(false);
     }
   };
+  const openProfile = (subject: Subject) => {
+    setSelectedSubject(subject);
+    setDrawerOpen(true);
+    editForm.setFieldsValue(subject);
+  };
+
+  const handleUpdate = async (values: any) => {
+    if (!selectedSubject) return;
+    
+    Modal.confirm({
+      title: 'Xác nhận lưu thay đổi?',
+      content: 'Thông tin môn học sẽ được cập nhật trên toàn hệ thống.',
+      okText: 'Lưu',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        setSubmitting(true);
+        try {
+          const payload = {
+            ...values,
+            theory_hours: (values.theory_credits || 0) * 15,
+            practice_hours: (values.practice_credits || 0) * 15
+          };
+          await apiClient.put(`/subjects/${selectedSubject.subject_id}`, payload);
+          message.success('Cập nhật môn học thành công');
+          setDrawerOpen(false);
+          fetchSubjects();
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || 'Lỗi khi cập nhật môn học.');
+        } finally {
+          setSubmitting(false);
+        }
+      }
+    });
+  };
 
   const filteredSubjects = subjects.filter(s =>
     s.subject_code.toLowerCase().includes(searchText.toLowerCase()) ||
@@ -65,12 +104,30 @@ const SubjectsPage: React.FC = () => {
 
   const columns = [
     { title: 'STT', width: 60, align: 'center' as const, render: (_: any, __: any, i: number) => i + 1 },
-    { title: 'Mã học phần', dataIndex: 'subject_code', width: 130 },
-    { title: 'Tên môn học', dataIndex: 'subject_name', ellipsis: true },
-    { title: 'Số TC', dataIndex: 'credits', width: 75, align: 'center' as const, className: 'tabular-nums' },
-    { title: 'Trọng số (LT-TH)', width: 130, align: 'center' as const, render: (_: any, record: Subject) => `${record.theory_credits || 0} – ${record.practice_credits || 0}` },
-    { title: 'Tiết LT', dataIndex: 'theory_hours', width: 80, align: 'center' as const, className: 'tabular-nums' },
-    { title: 'Tiết TH', dataIndex: 'practice_hours', width: 80, align: 'center' as const, className: 'tabular-nums' },
+    { 
+      title: 'Mã học phần', dataIndex: 'subject_code', width: 130,
+      sorter: (a: Subject, b: Subject) => (a.subject_code || '').localeCompare(b.subject_code || '')
+    },
+    { 
+      title: 'Tên môn học', dataIndex: 'subject_name', ellipsis: true,
+      sorter: (a: Subject, b: Subject) => (a.subject_name || '').localeCompare(b.subject_name || '')
+    },
+    { 
+      title: 'Số TC', dataIndex: 'credits', width: 75, align: 'center' as const, className: 'tabular-nums',
+      sorter: (a: Subject, b: Subject) => (a.credits || 0) - (b.credits || 0)
+    },
+    { 
+      title: 'Trọng số (LT-TH)', width: 130, align: 'center' as const, 
+      render: (_: any, record: Subject) => `${record.theory_credits || 0} – ${record.practice_credits || 0}` 
+    },
+    { 
+      title: 'Tiết LT', dataIndex: 'theory_hours', width: 80, align: 'center' as const, className: 'tabular-nums',
+      sorter: (a: Subject, b: Subject) => (a.theory_hours || 0) - (b.theory_hours || 0)
+    },
+    { 
+      title: 'Tiết TH', dataIndex: 'practice_hours', width: 80, align: 'center' as const, className: 'tabular-nums',
+      sorter: (a: Subject, b: Subject) => (a.practice_hours || 0) - (b.practice_hours || 0)
+    },
   ];
 
   return (
@@ -111,6 +168,12 @@ const SubjectsPage: React.FC = () => {
           scroll={{ y: 500 }}
           size="middle"
           locale={{ emptyText: <Empty description="Chưa có môn học nào" /> }}
+          showSorterTooltip={false}
+          onRow={(record) => ({
+            onClick: () => openProfile(record),
+            style: { cursor: 'pointer' },
+          })}
+          rowClassName={() => 'subject-row-hover'}
         />
       </div>
 
@@ -147,6 +210,77 @@ const SubjectsPage: React.FC = () => {
           </div>
         </Form>
       </Modal>
+
+      {/* ===== PROFILE DRAWER ===== */}
+      <Drawer
+        title={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: 20 }}>
+            <span><BookOutlined /> Chi tiết Môn học</span>
+            <Space>
+              <Button icon={<CloseOutlined />} onClick={() => setDrawerOpen(false)} size="small" type="text" />
+            </Space>
+          </div>
+        }
+        placement="right"
+        width={500}
+        onClose={() => setDrawerOpen(false)}
+        open={drawerOpen}
+        closable={false}
+        extra={
+          <Space>
+            <Button onClick={() => setDrawerOpen(false)}>Đóng</Button>
+            <Button type="primary" icon={<SaveOutlined />} onClick={() => editForm.submit()} loading={submitting}>
+              Lưu thay đổi
+            </Button>
+          </Space>
+        }
+      >
+        {selectedSubject && (
+          <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
+            <div style={{ background: 'var(--color-bg)', padding: '16px', borderRadius: 'var(--radius-lg)', marginBottom: '20px', border: '1px solid var(--color-border-light)' }}>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-muted)', marginBottom: '4px' }}>Mã học phần</div>
+              <Form.Item name="subject_code" noStyle rules={[{ required: true }]}>
+                <Input variant="borderless" style={{ fontSize: '18px', fontWeight: 700, padding: 0, color: 'var(--color-primary)' }} />
+              </Form.Item>
+            </div>
+
+            <Form.Item name="subject_name" label="Tên môn học" rules={[{ required: true }]}>
+              <Input placeholder="Tên môn học" />
+            </Form.Item>
+
+            <div style={{ display: 'flex', gap: '16px' }}>
+              <Form.Item style={{ flex: 1 }} name="credits" label="Tổng Tín Chỉ" rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item style={{ flex: 1 }} name="theory_credits" label="TC Lý Thuyết">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item style={{ flex: 1 }} name="practice_credits" label="TC Thực Hành">
+                <InputNumber min={0} style={{ width: '100%' }} />
+              </Form.Item>
+            </div>
+
+            <Descriptions title="Thông tin tính toán" column={2} bordered size="small" style={{ marginTop: '20px' }}>
+              <Descriptions.Item label="Tiết Lý thuyết">
+                <Tag color="blue">{watchTheory * 15} tiết</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="Tiết Thực hành">
+                <Tag color="cyan">{watchPractice * 15} tiết</Tag>
+              </Descriptions.Item>
+            </Descriptions>
+
+            <div style={{ marginTop: '24px', padding: '12px', background: 'var(--color-warning-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-warning)', color: 'var(--color-warning)', fontSize: '12px' }}>
+              <strong>Lưu ý:</strong> Thay đổi thông tin môn học sẽ ảnh hưởng đến tất cả các bảng dữ liệu liên quan (Khung chương trình, Đăng ký giảng dạy, v.v.)
+            </div>
+          </Form>
+        )}
+      </Drawer>
+
+      <style>{`
+        .subject-row-hover:hover td {
+          background: var(--color-primary-bg, #fff7f0) !important;
+        }
+      `}</style>
     </div>
   );
 };

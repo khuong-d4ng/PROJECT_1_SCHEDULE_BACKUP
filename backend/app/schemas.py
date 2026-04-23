@@ -30,6 +30,15 @@ class SubjectBase(BaseModel):
 class SubjectCreate(SubjectBase):
     pass
 
+class SubjectUpdate(BaseModel):
+    subject_code: Optional[str] = None
+    subject_name: Optional[str] = None
+    credits: Optional[int] = None
+    theory_credits: Optional[int] = None
+    practice_credits: Optional[int] = None
+    theory_hours: Optional[int] = None
+    practice_hours: Optional[int] = None
+
 class Subject(SubjectBase):
     subject_id: int
 

@@ -80,10 +80,22 @@ const CurriculumPage: React.FC = () => {
 
   const columns = [
     { title: 'Kỳ học', dataIndex: 'semester_index', key: 'semester_index', defaultSortOrder: 'ascend' as const, sorter: (a: CurriculumItem, b: CurriculumItem) => a.semester_index - b.semester_index },
-    { title: 'Mã HP', dataIndex: 'subject_code', key: 'subject_code' },
-    { title: 'Tên Học Phần', dataIndex: 'subject_name', key: 'subject_name' },
-    { title: 'Số TC', dataIndex: 'credits', key: 'credits' },
-    { title: 'Trọng số (LT-TH)', key: 'weight', render: (_: any, r: CurriculumItem) => `${r.theory_credits || 0}-${r.practice_credits || 0}` },
+    { 
+      title: 'Mã HP', dataIndex: 'subject_code', key: 'subject_code',
+      sorter: (a: CurriculumItem, b: CurriculumItem) => (a.subject_code || '').localeCompare(b.subject_code || '')
+    },
+    { 
+      title: 'Tên Học Phần', dataIndex: 'subject_name', key: 'subject_name',
+      sorter: (a: CurriculumItem, b: CurriculumItem) => (a.subject_name || '').localeCompare(b.subject_name || '')
+    },
+    { 
+      title: 'Số TC', dataIndex: 'credits', key: 'credits',
+      sorter: (a: CurriculumItem, b: CurriculumItem) => (a.credits || 0) - (b.credits || 0)
+    },
+    { 
+      title: 'Trọng số (LT-TH)', key: 'weight', 
+      render: (_: any, r: CurriculumItem) => `${r.theory_credits || 0}-${r.practice_credits || 0}` 
+    },
   ];
 
   return (
@@ -154,6 +166,7 @@ const CurriculumPage: React.FC = () => {
             loading={loading}
             size="small"
             scroll={{ y: 500 }}
+            showSorterTooltip={false}
           />
         )}
       </Card>

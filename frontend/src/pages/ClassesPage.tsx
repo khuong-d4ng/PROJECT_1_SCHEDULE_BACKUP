@@ -193,6 +193,7 @@ export default function ClassesPage() {
             loading={loading}
             pagination={{ pageSize: 15, showTotal: (total) => `${total} lớp` }}
             size="middle"
+            showSorterTooltip={false}
             locale={{ emptyText: <Empty description="Không có lớp nào" /> }}
           />
         </div>

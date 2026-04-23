@@ -353,21 +353,43 @@ export default function TimetableCenterPage() {
   // --- COLUMNS ---
   const tableColumns: ColumnsType<any> = [
     { title: 'STT', dataIndex: 'row_id', width: 55, align: 'center', render: (_, __, i) => i + 1 },
-    { title: 'Tên Lớp', dataIndex: 'class_name', width: 120, fixed: 'left', className: 'font-semibold' },
     {
-      title: 'Buổi CĐ', dataIndex: 'fixed_shift', width: 100, render: (val, record) => (
+      title: 'Tên Lớp', dataIndex: 'class_name', width: 120, fixed: 'left', className: 'font-semibold',
+      sorter: (a, b) => (a.class_name || '').localeCompare(b.class_name || '')
+    },
+    {
+      title: 'Buổi CĐ', dataIndex: 'fixed_shift', width: 100,
+      sorter: (a, b) => (a.fixed_shift || '').localeCompare(b.fixed_shift || ''),
+      render: (val, record) => (
         <Select size="small" style={{ width: '100%' }} value={val} allowClear placeholder="Chọn"
           onChange={v => handleRowChange(record.row_id, 'fixed_shift', v)}
           options={[{ value: 'Sáng', label: '☀️ Sáng' }, { value: 'Chiều', label: '🌙 Chiều' }]} />
       )
     },
-    { title: 'Mã Môn', dataIndex: 'subject_code', width: 90 },
-    { title: 'Tên Học Phần', dataIndex: 'subject_name', width: 220, ellipsis: true },
-    { title: 'TC', dataIndex: 'credits', width: 45, align: 'center' },
-    { title: 'LT', dataIndex: 'theory_hours', width: 45, align: 'center' },
-    { title: 'TH', dataIndex: 'practice_hours', width: 45, align: 'center' },
     {
-      title: 'GV Chính', dataIndex: 'main_lecturer_name', width: 180, render: (val, record) => (
+      title: 'Mã Môn', dataIndex: 'subject_code', width: 90,
+      sorter: (a, b) => (a.subject_code || '').localeCompare(b.subject_code || '')
+    },
+    {
+      title: 'Tên Học Phần', dataIndex: 'subject_name', width: 220, ellipsis: true,
+      sorter: (a, b) => (a.subject_name || '').localeCompare(b.subject_name || '')
+    },
+    {
+      title: 'TC', dataIndex: 'credits', width: 45, align: 'center',
+      sorter: (a, b) => (a.credits || 0) - (b.credits || 0)
+    },
+    {
+      title: 'LT', dataIndex: 'theory_hours', width: 45, align: 'center',
+      sorter: (a, b) => (a.theory_hours || 0) - (b.theory_hours || 0)
+    },
+    {
+      title: 'TH', dataIndex: 'practice_hours', width: 45, align: 'center',
+      sorter: (a, b) => (a.practice_hours || 0) - (b.practice_hours || 0)
+    },
+    {
+      title: 'GV Chính', dataIndex: 'main_lecturer_name', width: 180,
+      sorter: (a, b) => (a.main_lecturer_name || '').localeCompare(b.main_lecturer_name || ''),
+      render: (val, record) => (
         <DroppableCell rowId={record.row_id} field="main_lecturer_id">
           {val ? (
             <Tag color="blue" closable onClose={() => handleRowChange(record.row_id, 'main_lecturer_id', null)}>
@@ -378,7 +400,9 @@ export default function TimetableCenterPage() {
       )
     },
     {
-      title: 'GV Thực Hành', dataIndex: 'prac_lecturer_name', width: 180, render: (val, record) => (
+      title: 'GV Thực Hành', dataIndex: 'prac_lecturer_name', width: 180,
+      sorter: (a, b) => (a.prac_lecturer_name || '').localeCompare(b.prac_lecturer_name || ''),
+      render: (val, record) => (
         <DroppableCell rowId={record.row_id} field="prac_lecturer_id">
           {val ? (
             <Tag color="cyan" closable onClose={() => handleRowChange(record.row_id, 'prac_lecturer_id', null)}>
@@ -389,7 +413,9 @@ export default function TimetableCenterPage() {
       )
     },
     {
-      title: 'Phòng', dataIndex: 'room_type', width: 120, render: (val, record) => (
+      title: 'Phòng', dataIndex: 'room_type', width: 120,
+      sorter: (a, b) => (a.room_type || '').localeCompare(b.room_type || ''),
+      render: (val, record) => (
         <Select size="small" style={{ width: '100%' }} value={val} allowClear placeholder="Chọn"
           onChange={v => handleRowChange(record.row_id, 'room_type', v)}
           options={[{ value: 'Phòng thường', label: 'Phòng thường' }, { value: 'Phòng máy', label: 'Phòng máy' }]} />
@@ -397,6 +423,7 @@ export default function TimetableCenterPage() {
     },
     {
       title: 'Thứ-S', dataIndex: 'morning_day', width: 90, align: 'center',
+      sorter: (a, b) => (a.morning_day || '').localeCompare(b.morning_day || ''),
       render: (val, record) => (
         <Select size="small" style={{ width: '100%' }} value={val || undefined} allowClear placeholder="-"
           onChange={v => handleRowChange(record.row_id, 'morning_day', v || null)}
@@ -405,6 +432,7 @@ export default function TimetableCenterPage() {
     },
     {
       title: 'Thứ-C', dataIndex: 'afternoon_day', width: 90, align: 'center',
+      sorter: (a, b) => (a.afternoon_day || '').localeCompare(b.afternoon_day || ''),
       render: (val, record) => (
         <Select size="small" style={{ width: '100%' }} value={val || undefined} allowClear placeholder="-"
           onChange={v => handleRowChange(record.row_id, 'afternoon_day', v || null)}
@@ -522,6 +550,20 @@ export default function TimetableCenterPage() {
                 size="small"
                 bordered
                 pagination={false}
+                showSorterTooltip={false}
+                rowClassName={(record) => {
+                  let cls = '';
+                  if (focusedSubjectId === record.subject_id) {
+                    cls = 'row-focused';
+                  } else if (dragCapableSubjects) {
+                    if (dragCapableSubjects.has(record.subject_id)) {
+                      cls = 'row-drag-capable';
+                    } else {
+                      cls = 'row-drag-incapable';
+                    }
+                  }
+                  return cls;
+                }}
                 onRow={(record) => ({
                   onClick: () => {
                     // Toggle focus: click again to deselect
@@ -529,21 +571,6 @@ export default function TimetableCenterPage() {
                   },
                   style: {
                     cursor: 'pointer',
-                    // If row is focused
-                    ...(focusedSubjectId === record.subject_id && {
-                      backgroundColor: '#eff6ff',
-                      outline: '2px solid #3b82f6',
-                      outlineOffset: '-2px'
-                    }),
-                    // If dragging: highlight compatible rows green, dim incompatible
-                    ...(dragCapableSubjects && dragCapableSubjects.has(record.subject_id) && {
-                      backgroundColor: '#f0fdf4',
-                      outline: '2px solid #22c55e',
-                      outlineOffset: '-2px'
-                    }),
-                    ...(dragCapableSubjects && !dragCapableSubjects.has(record.subject_id) && {
-                      opacity: 0.35,
-                    }),
                   }
                 })}
               />

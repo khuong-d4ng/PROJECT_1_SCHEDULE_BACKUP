@@ -284,10 +284,22 @@ const LecturersPage: React.FC = () => {
 
   const columns = [
     { title: 'STT', width: 60, align: 'center' as const, render: (_: any, __: any, i: number) => i + 1 },
-    { title: 'Mã GV', dataIndex: 'lecturer_code', width: 140 },
-    { title: 'Họ và tên', dataIndex: 'full_name', ellipsis: true },
-    { title: 'Phân loại', dataIndex: 'type', width: 120 },
-    { title: 'Chỉ tiêu (tiết)', dataIndex: 'max_quota', width: 120, align: 'center' as const, className: 'tabular-nums' },
+    { 
+      title: 'Mã GV', dataIndex: 'lecturer_code', width: 140,
+      sorter: (a: Lecturer, b: Lecturer) => (a.lecturer_code || '').localeCompare(b.lecturer_code || '')
+    },
+    { 
+      title: 'Họ và tên', dataIndex: 'full_name', ellipsis: true,
+      sorter: (a: Lecturer, b: Lecturer) => (a.full_name || '').localeCompare(b.full_name || '')
+    },
+    { 
+      title: 'Phân loại', dataIndex: 'type', width: 120,
+      sorter: (a: Lecturer, b: Lecturer) => (a.type || '').localeCompare(b.type || '')
+    },
+    { 
+      title: 'Chỉ tiêu (tiết)', dataIndex: 'max_quota', width: 120, align: 'center' as const, className: 'tabular-nums',
+      sorter: (a: Lecturer, b: Lecturer) => (a.max_quota || 0) - (b.max_quota || 0)
+    },
   ];
 
   const previewColumns = [
@@ -385,6 +397,7 @@ const LecturersPage: React.FC = () => {
           pagination={{ pageSize: 15, showSizeChanger: false, showTotal: (total) => `${total} kết quả` }}
           size="middle"
           locale={{ emptyText: <Empty description="Chưa có giảng viên nào" /> }}
+          showSorterTooltip={false}
           onRow={(record) => ({
             onClick: () => openProfile(record),
             style: { cursor: 'pointer' },

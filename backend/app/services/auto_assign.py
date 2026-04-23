@@ -144,7 +144,7 @@ class AutoAssigner:
         # C_MANUAL_EXEMPTION: Skip if subject has no preference mapping
         if row.subject_id not in self.preference_map:
             result.warnings.append(
-                f"⚠️ Môn {subj.subject_code} ({subj.subject_name}) không có GV đăng ký nguyện vọng - bỏ qua"
+                f"⚠️ Môn {subj.subject_code} ({subj.subject_name}) không có GV đăng ký dạy - bỏ qua"
             )
             return False
 
