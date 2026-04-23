@@ -157,7 +157,7 @@ const RegistrationsPage: React.FC = () => {
       if (resLists.data.length > 0 && !selectedListId) {
         setSelectedListId(resLists.data[0].list_id);
       }
-    } catch (e) {
+    } catch {
       message.error("Lỗi tải dữ liệu nền");
     }
   };
@@ -205,7 +205,7 @@ const RegistrationsPage: React.FC = () => {
           if (selectedListId === listId) {
             setSelectedListId(null);
           }
-        } catch (e: any) {
+        } catch {
           message.error("Lỗi khi xóa phiên bản");
         }
       }

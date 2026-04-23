@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from typing import List, Optional
+from typing import List
 from app.core.database import get_db
 from app import models, schemas
 from app.services.auto_assign import AutoAssigner
-from sqlalchemy import func
+
 import pandas as pd
 import io
 
@@ -36,6 +36,8 @@ def generate_timetable(payload: schemas.TimetableSessionCreate, db: Session = De
             
         # Core Auto-Gen Logic
         generated_rows = 0
+        shift_toggle = True # True: Sáng, False: Chiều
+        
         for entry in payload.entries:
             # Lấy tất cả Môn học của (Chương trình + Kỳ)
             curriculums = db.query(models.ProgramCurriculum).filter(
@@ -56,14 +58,16 @@ def generate_timetable(payload: schemas.TimetableSessionCreate, db: Session = De
             # Nhân chéo: Lớp x Môn
             for c in classes:
                 for subj_id in subject_ids:
-                    # Tạo TimetableRow (Đổ trắng các thông tin rải lệnh)
+                    # Tạo TimetableRow
                     row = models.TimetableRow(
                         session_id=new_session.session_id,
                         class_name=c.class_name,
-                        subject_id=subj_id
+                        subject_id=subj_id,
+                        fixed_shift="Sáng" if shift_toggle else "Chiều"
                     )
                     db.add(row)
                     generated_rows += 1
+                    shift_toggle = not shift_toggle # Alternate shift
                     
         db.commit()
         return new_session

@@ -1,19 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Layout, Typography, Button, Table, Modal, Form, 
-  Input, Select, Space, Card, message, Steps, Divider, Row, Col,
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  Button, Table, Modal,
+  Input, Select, Space, Card, message, Steps, Row, Col,
   Progress, Tag, Tooltip
 } from 'antd';
-import { 
-  PlusOutlined, EyeOutlined, SettingOutlined, CalendarOutlined,
-  ThunderboltOutlined, SearchOutlined, DeleteOutlined, DownloadOutlined
+const { CheckableTag } = Tag;
+import {
+  PlusOutlined, EyeOutlined, CalendarOutlined,
+  ThunderboltOutlined, SearchOutlined, DeleteOutlined, DownloadOutlined,
+  SortAscendingOutlined, SortDescendingOutlined
 } from '@ant-design/icons';
 import apiClient from '../api/client';
 import type { ColumnsType } from 'antd/es/table';
 import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 
-const { Title, Text } = Typography;
+// Typography components used via Typography.Title etc. if needed, 
+// but here they were extracted and unused.
 
 // ---------- DND Components ----------
 
@@ -36,7 +39,7 @@ const DraggableLecturerCard = ({ lecturer, stats }: { lecturer: any; stats: LecS
   return (
     <div
       ref={setNodeRef} {...listeners} {...attributes}
-      style={{...style, boxShadow: 'var(--shadow-sm)', transition: 'border-color 0.15s, box-shadow 0.15s' }}
+      style={{ ...style, boxShadow: 'var(--shadow-sm)', transition: 'border-color 0.15s, box-shadow 0.15s' }}
       className="bg-white border border-slate-200 rounded-lg p-2.5 mb-2 cursor-grab hover:border-orange-300"
     >
       <div className="flex justify-between items-center mb-1">
@@ -83,15 +86,19 @@ export default function TimetableCenterPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const [rows, setRows] = useState<any[]>([]);
-  
+
   // Sidebar
   const [lecturers, setLecturers] = useState<any[]>([]);
   const [statsMap, setStatsMap] = useState<Record<string, LecStats>>({});
   const [lecSearch, setLecSearch] = useState('');
+  // Pool filters
+  const [poolTypeFilter, setPoolTypeFilter] = useState<string>('all'); // 'all' | 'Cơ hữu' | 'Thỉnh giảng'
+  const [poolRoleFilter, setPoolRoleFilter] = useState<string>('all'); // 'all' | 'LT' | 'TH'
+  const [poolSortAsc, setPoolSortAsc] = useState(true);
   const [activeLecturer, setActiveLecturer] = useState<any>(null);
 
   // Preference map: subject_id -> {main: [lec_ids], prac: [lec_ids]}
-  const [prefMap, setPrefMap] = useState<Record<string, {main: number[], prac: number[]}>>({}); 
+  const [prefMap, setPrefMap] = useState<Record<string, { main: number[], prac: number[] }>>({});
   // Click row to focus a subject -> filter sidebar
   const [focusedSubjectId, setFocusedSubjectId] = useState<number | null>(null);
 
@@ -107,7 +114,7 @@ export default function TimetableCenterPage() {
   const [currentStep, setCurrentStep] = useState(0);
   const [regLists, setRegLists] = useState<any[]>([]);
   const [programs, setPrograms] = useState<any[]>([]);
-  
+
   const [wizardConfig, setWizardConfig] = useState({
     plan_name: "",
     registration_list_id: null as number | null,
@@ -124,29 +131,29 @@ export default function TimetableCenterPage() {
   };
 
   const fetchRegLists = async () => {
-    try { const res = await apiClient.get('/registrations/lists'); setRegLists(res.data); } catch {}
+    try { const res = await apiClient.get('/registrations/lists'); setRegLists(res.data); } catch { }
   };
 
   const fetchPrograms = async () => {
-    try { const res = await apiClient.get('/programs/'); setPrograms(res.data); } catch {}
+    try { const res = await apiClient.get('/programs/'); setPrograms(res.data); } catch { }
   };
 
   const fetchLecturers = async () => {
-    try { const res = await apiClient.get('/lecturers/'); setLecturers(res.data); } catch {}
+    try { const res = await apiClient.get('/lecturers/'); setLecturers(res.data); } catch { }
   };
 
   const fetchStats = async (sessionId: number) => {
     try {
       const res = await apiClient.get(`/timetables/${sessionId}/stats`);
       setStatsMap(res.data);
-    } catch {}
+    } catch { }
   };
 
   const fetchPrefMap = async (sessionId: number) => {
     try {
       const res = await apiClient.get(`/timetables/${sessionId}/preference-map`);
       setPrefMap(res.data);
-    } catch {}
+    } catch { }
   };
 
   useEffect(() => {
@@ -330,12 +337,7 @@ export default function TimetableCenterPage() {
     }
   };
 
-  // --- HELPERS: Check if lecturer can teach subject ---
-  const canLecturerTeachSubject = (lecId: number, subjectId: number, role: 'main' | 'prac') => {
-    const pref = prefMap[String(subjectId)];
-    if (!pref) return false;
-    return pref[role]?.includes(lecId) || false;
-  };
+  // --- HELPERS ---
 
   // Get all subject_ids this lecturer can teach (for drag highlight)
   const getLecturerCapableSubjects = (lecId: number): Set<number> => {
@@ -352,78 +354,124 @@ export default function TimetableCenterPage() {
   const tableColumns: ColumnsType<any> = [
     { title: 'STT', dataIndex: 'row_id', width: 55, align: 'center', render: (_, __, i) => i + 1 },
     { title: 'Tên Lớp', dataIndex: 'class_name', width: 120, fixed: 'left', className: 'font-semibold' },
-    { title: 'Buổi CĐ', dataIndex: 'fixed_shift', width: 100, render: (val, record) => (
-      <Select size="small" style={{width: '100%'}} value={val} allowClear placeholder="Chọn"
-        onChange={v => handleRowChange(record.row_id, 'fixed_shift', v)}
-        options={[{value:'Sáng',label:'☀️ Sáng'},{value:'Chiều',label:'🌙 Chiều'}]} />
-    ) },
+    {
+      title: 'Buổi CĐ', dataIndex: 'fixed_shift', width: 100, render: (val, record) => (
+        <Select size="small" style={{ width: '100%' }} value={val} allowClear placeholder="Chọn"
+          onChange={v => handleRowChange(record.row_id, 'fixed_shift', v)}
+          options={[{ value: 'Sáng', label: '☀️ Sáng' }, { value: 'Chiều', label: '🌙 Chiều' }]} />
+      )
+    },
     { title: 'Mã Môn', dataIndex: 'subject_code', width: 90 },
     { title: 'Tên Học Phần', dataIndex: 'subject_name', width: 220, ellipsis: true },
     { title: 'TC', dataIndex: 'credits', width: 45, align: 'center' },
     { title: 'LT', dataIndex: 'theory_hours', width: 45, align: 'center' },
     { title: 'TH', dataIndex: 'practice_hours', width: 45, align: 'center' },
-    { title: 'GV Chính', dataIndex: 'main_lecturer_name', width: 180, render: (val, record) => (
-      <DroppableCell rowId={record.row_id} field="main_lecturer_id">
-        {val ? (
-          <Tag color="blue" closable onClose={() => handleRowChange(record.row_id, 'main_lecturer_id', null)}>
-            {val}
-          </Tag>
-        ) : <span className="text-gray-300 italic text-xs">Kéo GV vào đây</span>}
-      </DroppableCell>
-    ) },
-    { title: 'GV Thực Hành', dataIndex: 'prac_lecturer_name', width: 180, render: (val, record) => (
-      <DroppableCell rowId={record.row_id} field="prac_lecturer_id">
-        {val ? (
-          <Tag color="cyan" closable onClose={() => handleRowChange(record.row_id, 'prac_lecturer_id', null)}>
-            {val}
-          </Tag>
-        ) : <span className="text-gray-300 italic text-xs">Kéo GV vào đây</span>}
-      </DroppableCell>
-    ) },
-    { title: 'Phòng', dataIndex: 'room_type', width: 120, render: (val, record) => (
-      <Select size="small" style={{width: '100%'}} value={val} allowClear placeholder="Chọn"
-        onChange={v => handleRowChange(record.row_id, 'room_type', v)}
-        options={[{value:'Phòng thường',label:'Phòng thường'},{value:'Phòng máy',label:'Phòng máy'}]} />
-    ) },
-    { title: 'Thứ-S', dataIndex: 'morning_day', width: 90, align: 'center',
-      render: (val, record) => (
-        <Select size="small" style={{width: '100%'}} value={val || undefined} allowClear placeholder="-"
-          onChange={v => handleRowChange(record.row_id, 'morning_day', v || null)}
-          options={['S-T2','S-T3','S-T4','S-T5','S-T6','S-T7'].map(s => ({value: s, label: s}))} />
+    {
+      title: 'GV Chính', dataIndex: 'main_lecturer_name', width: 180, render: (val, record) => (
+        <DroppableCell rowId={record.row_id} field="main_lecturer_id">
+          {val ? (
+            <Tag color="blue" closable onClose={() => handleRowChange(record.row_id, 'main_lecturer_id', null)}>
+              {val}
+            </Tag>
+          ) : <span className="text-gray-300 italic text-xs">Kéo GV vào đây</span>}
+        </DroppableCell>
       )
     },
-    { title: 'Thứ-C', dataIndex: 'afternoon_day', width: 90, align: 'center',
+    {
+      title: 'GV Thực Hành', dataIndex: 'prac_lecturer_name', width: 180, render: (val, record) => (
+        <DroppableCell rowId={record.row_id} field="prac_lecturer_id">
+          {val ? (
+            <Tag color="cyan" closable onClose={() => handleRowChange(record.row_id, 'prac_lecturer_id', null)}>
+              {val}
+            </Tag>
+          ) : <span className="text-gray-300 italic text-xs">Kéo GV vào đây</span>}
+        </DroppableCell>
+      )
+    },
+    {
+      title: 'Phòng', dataIndex: 'room_type', width: 120, render: (val, record) => (
+        <Select size="small" style={{ width: '100%' }} value={val} allowClear placeholder="Chọn"
+          onChange={v => handleRowChange(record.row_id, 'room_type', v)}
+          options={[{ value: 'Phòng thường', label: 'Phòng thường' }, { value: 'Phòng máy', label: 'Phòng máy' }]} />
+      )
+    },
+    {
+      title: 'Thứ-S', dataIndex: 'morning_day', width: 90, align: 'center',
       render: (val, record) => (
-        <Select size="small" style={{width: '100%'}} value={val || undefined} allowClear placeholder="-"
+        <Select size="small" style={{ width: '100%' }} value={val || undefined} allowClear placeholder="-"
+          onChange={v => handleRowChange(record.row_id, 'morning_day', v || null)}
+          options={['S-T2', 'S-T3', 'S-T4', 'S-T5', 'S-T6', 'S-T7'].map(s => ({ value: s, label: s }))} />
+      )
+    },
+    {
+      title: 'Thứ-C', dataIndex: 'afternoon_day', width: 90, align: 'center',
+      render: (val, record) => (
+        <Select size="small" style={{ width: '100%' }} value={val || undefined} allowClear placeholder="-"
           onChange={v => handleRowChange(record.row_id, 'afternoon_day', v || null)}
-          options={['C-T2','C-T3','C-T4','C-T5','C-T6','C-T7'].map(s => ({value: s, label: s}))} />
+          options={['C-T2', 'C-T3', 'C-T4', 'C-T5', 'C-T6', 'C-T7'].map(s => ({ value: s, label: s }))} />
       )
     },
   ];
 
+  // --- Derive LT/TH role sets from prefMap (from the linked registration list) ---
+  const lecturerRoleMap = useMemo(() => {
+    const roleMap: Record<number, { isLT: boolean; isTH: boolean }> = {};
+    for (const pref of Object.values(prefMap)) {
+      for (const lid of (pref.main || [])) {
+        if (!roleMap[lid]) roleMap[lid] = { isLT: false, isTH: false };
+        roleMap[lid].isLT = true;
+      }
+      for (const lid of (pref.prac || [])) {
+        if (!roleMap[lid]) roleMap[lid] = { isLT: false, isTH: false };
+        roleMap[lid].isTH = true;
+      }
+    }
+    return roleMap;
+  }, [prefMap]);
+
   // --- WORKSPACE VIEW ---
   if (selectedSessionId) {
     const curSession = sessions.find(s => s.session_id === selectedSessionId);
-    const filteredLecs = lecturers.filter(l =>
+
+    // Apply text search
+    let filteredLecs = lecturers.filter(l =>
       l.full_name.toLowerCase().includes(lecSearch.toLowerCase()) ||
       l.lecturer_code.toLowerCase().includes(lecSearch.toLowerCase())
     );
 
+    // Apply type filter (Cơ hữu / Thỉnh giảng)
+    if (poolTypeFilter !== 'all') {
+      filteredLecs = filteredLecs.filter(l => l.type === poolTypeFilter);
+    }
+
+    // Apply role filter (LT / TH from registration list)
+    if (poolRoleFilter !== 'all') {
+      filteredLecs = filteredLecs.filter(l => {
+        const role = lecturerRoleMap[l.lecturer_id];
+        if (!role) return false;
+        return poolRoleFilter === 'LT' ? role.isLT : role.isTH;
+      });
+    }
+
     // When a subject is focused (row clicked), filter sidebar to only show capable lecturers
     const capableLecIds = focusedSubjectId
       ? new Set([
-          ...(prefMap[String(focusedSubjectId)]?.main || []),
-          ...(prefMap[String(focusedSubjectId)]?.prac || [])
-        ])
+        ...(prefMap[String(focusedSubjectId)]?.main || []),
+        ...(prefMap[String(focusedSubjectId)]?.prac || [])
+      ])
       : null;
 
     const displayLecs = capableLecIds
       ? filteredLecs.filter(l => capableLecIds.has(l.lecturer_id))
       : filteredLecs;
 
-    // Sort lecturers: by hours ascending
+    // Sort lecturers by hours
     const getHours = (id: number) => statsMap[String(id)]?.hours || 0;
-    const sortedLecs = [...displayLecs].sort((a, b) => getHours(a.lecturer_id) - getHours(b.lecturer_id));
+    const sortedLecs = [...displayLecs].sort((a, b) =>
+      poolSortAsc
+        ? getHours(a.lecturer_id) - getHours(b.lecturer_id)
+        : getHours(b.lecturer_id) - getHours(a.lecturer_id)
+    );
 
     // When dragging: compute which subjects the dragged lecturer can teach
     const dragCapableSubjects = activeLecturer
@@ -454,22 +502,22 @@ export default function TimetableCenterPage() {
                     Export Excel
                   </Button>
                 </Tooltip>
-                <Button 
-                  type="primary" 
-                  icon={<ThunderboltOutlined />} 
+                <Button
+                  type="primary"
+                  icon={<ThunderboltOutlined />}
                   onClick={() => setIsAutoAssignModalOpen(true)}
                 >
                   ⚡ Auto-Assign
                 </Button>
               </Space>
             </div>
-            
+
             {/* Table */}
             <div className="flex-1 overflow-auto p-3">
-              <Table 
-                columns={tableColumns} 
-                dataSource={rows} 
-                rowKey="row_id" 
+              <Table
+                columns={tableColumns}
+                dataSource={rows}
+                rowKey="row_id"
                 scroll={{ x: 1600, y: 'calc(100vh - 220px)' }}
                 size="small"
                 bordered
@@ -503,8 +551,9 @@ export default function TimetableCenterPage() {
           </div>
 
           {/* RIGHT: Sidebar Pool GV */}
-          <div style={{ width: '280px', background: 'var(--color-white)', borderLeft: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', boxShadow: '-2px 0 8px rgba(0,0,0,0.04)' }}>
-            <div style={{ padding: '12px', borderBottom: '1px solid var(--color-border-light)', background: 'var(--color-bg)' }}>
+          <div style={{ width: '300px', background: 'var(--color-white)', borderLeft: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', boxShadow: '-2px 0 8px rgba(0,0,0,0.04)', height: '100%', overflow: 'hidden' }}>
+            {/* Header */}
+            <div style={{ padding: '12px', borderBottom: '1px solid var(--color-border-light)', background: 'var(--color-bg)', flexShrink: 0 }}>
               {focusedSubjectId ? (
                 <>
                   <div style={{ fontWeight: 700, color: 'var(--color-success)', marginBottom: '4px', fontSize: '13px' }}>✅ GV có thể dạy:</div>
@@ -517,30 +566,62 @@ export default function TimetableCenterPage() {
                 </>
               ) : (
                 <>
-                  <div style={{ fontWeight: 700, color: 'var(--color-text)', marginBottom: '8px', fontSize: '13px' }}>🎓 Pool Giảng Viên</div>
-                  <Input 
-                    prefix={<SearchOutlined className="text-slate-400" />}
-                    placeholder="Tìm tên / mã GV…"
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <span style={{ fontWeight: 700, color: 'var(--color-text)', fontSize: '13px' }}>Danh sách Giảng Viên</span>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{sortedLecs.length}/{lecturers.length}</span>
+                  </div>
+                  <Input
+                    prefix={<SearchOutlined style={{ color: 'var(--color-text-muted)' }} />}
+                    placeholder="Tìm tên hoặc mã GV…"
                     size="small"
                     allowClear
                     value={lecSearch}
                     onChange={e => setLecSearch(e.target.value)}
+                    style={{ marginBottom: '8px' }}
                   />
-                  <div className="mt-2 text-xs text-slate-400">
-                    {lecturers.length} GV tổng | {Object.keys(statsMap).length} đã phân công
+                  {/* Filter Row 1: Employment Type */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                    <CheckableTag checked={poolTypeFilter === 'all'} onChange={() => setPoolTypeFilter('all')}
+                      style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'all' ? 'none' : '1px solid var(--color-border)' }}>Tất cả</CheckableTag>
+                    <CheckableTag checked={poolTypeFilter === 'Cơ hữu'} onChange={() => setPoolTypeFilter(poolTypeFilter === 'Cơ hữu' ? 'all' : 'Cơ hữu')}
+                      style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'Cơ hữu' ? 'none' : '1px solid var(--color-border)' }}>Cơ hữu</CheckableTag>
+                    <CheckableTag checked={poolTypeFilter === 'Thỉnh giảng'} onChange={() => setPoolTypeFilter(poolTypeFilter === 'Thỉnh giảng' ? 'all' : 'Thỉnh giảng')}
+                      style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'Thỉnh giảng' ? 'none' : '1px solid var(--color-border)' }}>Thỉnh giảng</CheckableTag>
                   </div>
-                  <div className="mt-1 text-xs text-blue-400 italic">
-                    👉 Click vào 1 dòng TKB để lọc GV phù hợp
+                  {/* Filter Row 2: LT/TH Role + Sort */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <CheckableTag checked={poolRoleFilter === 'LT'} onChange={() => setPoolRoleFilter(poolRoleFilter === 'LT' ? 'all' : 'LT')}
+                        style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolRoleFilter === 'LT' ? 'none' : '1px solid var(--color-border)' }}>Lý thuyết</CheckableTag>
+                      <CheckableTag checked={poolRoleFilter === 'TH'} onChange={() => setPoolRoleFilter(poolRoleFilter === 'TH' ? 'all' : 'TH')}
+                        style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolRoleFilter === 'TH' ? 'none' : '1px solid var(--color-border)' }}>Thực hành</CheckableTag>
+                    </div>
+                    <Tooltip title={poolSortAsc ? 'Ít tiết → Nhiều tiết' : 'Nhiều tiết → Ít tiết'}>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={poolSortAsc ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
+                        onClick={() => setPoolSortAsc(!poolSortAsc)}
+                        style={{ fontSize: '14px', color: 'var(--color-accent)' }}
+                      />
+                    </Tooltip>
+                  </div>
+                  <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                    👉 Click 1 dòng TKB để lọc GV phù hợp
                   </div>
                 </>
               )}
             </div>
-            <div className="flex-1 overflow-y-auto p-2 custom-scrollbar">
+            {/* Scrollable List */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }} className="custom-scrollbar">
+              {sortedLecs.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>Không có giảng viên phù hợp</div>
+              )}
               {sortedLecs.map(lec => (
-                <DraggableLecturerCard 
-                  key={lec.lecturer_id} 
-                  lecturer={lec} 
-                  stats={statsMap[String(lec.lecturer_id)] || { hours: 0, subjects: 0, classes: 0, slots: 0 }} 
+                <DraggableLecturerCard
+                  key={lec.lecturer_id}
+                  lecturer={lec}
+                  stats={statsMap[String(lec.lecturer_id)] || { hours: 0, subjects: 0, classes: 0, slots: 0 }}
                 />
               ))}
             </div>
@@ -567,8 +648,8 @@ export default function TimetableCenterPage() {
             </div>
             <div>
               <label className="font-semibold block mb-2">Chọn Chiến lược Phân bổ:</label>
-              <Select 
-                className="w-full" 
+              <Select
+                className="w-full"
                 value={autoAssignStrategy}
                 onChange={setAutoAssignStrategy}
                 options={[
@@ -638,11 +719,11 @@ export default function TimetableCenterPage() {
               <Button type="link" icon={<EyeOutlined />} onClick={() => loadSessionDetails(s.session_id)}>Truy cập Workspace</Button>,
               <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDeleteSession(s.session_id)}>Xóa</Button>
             ]}>
-              <Card.Meta 
+              <Card.Meta
                 title={<div className="font-bold text-lg">{s.plan_name}</div>}
                 description={
                   <div className="mt-2 space-y-2">
-                    <div><CalendarOutlined className="mr-2"/>Ngày tạo: {s.created_at}</div>
+                    <div><CalendarOutlined className="mr-2" />Ngày tạo: {s.created_at}</div>
                     <div className="text-xs text-gray-400">Trạng thái: {s.status}</div>
                   </div>
                 }
@@ -674,28 +755,28 @@ export default function TimetableCenterPage() {
           <div className="space-y-4">
             <div>
               <label className="font-semibold block mb-1">Tên Đợt TKB (*):</label>
-              <Input placeholder="VD: TKB Chính khóa HK1 2024-2025" 
-                 value={wizardConfig.plan_name} onChange={e => setWizardConfig({...wizardConfig, plan_name: e.target.value})} 
+              <Input placeholder="VD: TKB Chính khóa HK1 2024-2025"
+                value={wizardConfig.plan_name} onChange={e => setWizardConfig({ ...wizardConfig, plan_name: e.target.value })}
               />
             </div>
             <div>
               <label className="font-semibold block mb-1">Nguồn Đăng Ký Nguyện Vọng:</label>
-              <Select 
+              <Select
                 allowClear className="w-full"
                 placeholder="Chọn Danh sách nguyện vọng giảng dạy (Không bắt buộc ngay)"
                 value={wizardConfig.registration_list_id}
-                onChange={v => setWizardConfig({...wizardConfig, registration_list_id: v})}
-                options={regLists.map(l => ({label: l.list_name, value: l.list_id}))}
+                onChange={v => setWizardConfig({ ...wizardConfig, registration_list_id: v })}
+                options={regLists.map(l => ({ label: l.list_name, value: l.list_id }))}
               />
             </div>
             <div>
               <label className="font-semibold block mb-1">Chọn Khung Chương Trình tham gia xếp lịch (*):</label>
-              <Select 
+              <Select
                 mode="multiple" className="w-full"
                 placeholder="Chọn ít nhất 1 Chương trình"
                 value={wizardConfig.program_ids}
-                onChange={val => setWizardConfig({...wizardConfig, program_ids: val})}
-                options={programs.map(p => ({label: `${p.name} (Khóa ${p.batch})`, value: p.id}))}
+                onChange={val => setWizardConfig({ ...wizardConfig, program_ids: val })}
+                options={programs.map(p => ({ label: `${p.name} (Khóa ${p.batch})`, value: p.id }))}
               />
             </div>
             <div className="text-right mt-6">
@@ -709,7 +790,7 @@ export default function TimetableCenterPage() {
             <div className="bg-yellow-50 p-3 rounded text-sm text-yellow-800 border border-yellow-200">
               Hệ thống sẽ dựa vào cấu hình dưới đây để nhân chéo với DB (Lấy các lớp của khóa tương ứng, lấy các môn của học kì đó) và tự sinh (auto-gen) ra một cấu trúc Mảng y hệt file Excel.
             </div>
-            
+
             {wizardConfig.program_ids.map(p_id => {
               const prog = programs.find(p => p.id === p_id);
               return (
@@ -717,13 +798,13 @@ export default function TimetableCenterPage() {
                   {entriesConfig[p_id]?.map((cfg: any, i: number) => (
                     <Row gutter={16} key={i} className="mb-2">
                       <Col span={10}>
-                        <Select className="w-full" value={cfg.semester_index} onChange={v => updateEntry(p_id, i, 'semester_index', v)} options={[1,2,3,4,5,6,7,8].map(n=>({label:`Học Kì ${n}`, value:n}))} />
+                        <Select className="w-full" value={cfg.semester_index} onChange={v => updateEntry(p_id, i, 'semester_index', v)} options={[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ label: `Học Kì ${n}`, value: n }))} />
                       </Col>
                       <Col span={4}>
                         <Button danger type="text" onClick={() => {
                           const list = [...entriesConfig[p_id]];
                           list.splice(i, 1);
-                          setEntriesConfig({...entriesConfig, [p_id]: list});
+                          setEntriesConfig({ ...entriesConfig, [p_id]: list });
                         }}>Xóa</Button>
                       </Col>
                     </Row>

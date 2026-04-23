@@ -4,7 +4,7 @@ import { PlusOutlined, UploadOutlined, SolutionOutlined, SearchOutlined } from '
 import apiClient from '../api/client';
 
 interface Program {
-  id: int;
+  id: number;
   program_code: string;
   name: string;
   department_major: string;
@@ -31,7 +31,7 @@ const CurriculumPage: React.FC = () => {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [selectedProgram, setSelectedProgram] = useState<Program | null>(null);
   const [curriculums, setCurriculums] = useState<CurriculumItem[]>([]);
-  
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [form] = Form.useForm();
@@ -89,7 +89,7 @@ const CurriculumPage: React.FC = () => {
   return (
     <div className="flex h-full space-x-4">
       {/* Left Panel: Program List */}
-      <Card 
+      <Card
         style={{ width: '33%', boxShadow: 'var(--shadow-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)', overflow: 'hidden' }}
         title={<span style={{ fontWeight: 600 }}>Khung Chương Trình</span>}
         extra={<Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Thêm mới</Button>}
@@ -99,8 +99,8 @@ const CurriculumPage: React.FC = () => {
             <div className="p-8 text-center text-gray-400">Chưa có dữ liệu</div>
           ) : (
             programs.map(prog => (
-              <div 
-                key={prog.id} 
+              <div
+                key={prog.id}
                 onClick={() => handleSelectProgram(prog)}
                 className={`p-4 border-b cursor-pointer transition-colors ${selectedProgram?.id === prog.id ? 'border-l-4' : 'hover:bg-gray-50'}`}
                 style={selectedProgram?.id === prog.id ? { backgroundColor: 'var(--color-primary-bg)', borderLeftColor: 'var(--color-primary)' } : {}}
@@ -114,12 +114,12 @@ const CurriculumPage: React.FC = () => {
       </Card>
 
       {/* Right Panel: Content & Import */}
-      <Card 
+      <Card
         style={{ width: '67%', boxShadow: 'var(--shadow-card)', borderRadius: 'var(--radius-lg)', border: '1px solid var(--color-border)' }}
         title={<span style={{ fontWeight: 600 }}>{selectedProgram ? `Chi tiết: ${selectedProgram.name}` : 'Chọn 1 chương trình để xem'}</span>}
         extra={
           selectedProgram && (
-            <Upload 
+            <Upload
               accept=".xlsx,.xls"
               showUploadList={false}
               customRequest={async ({ file, onSuccess, onError }) => {
@@ -142,14 +142,14 @@ const CurriculumPage: React.FC = () => {
             </Upload>
           )
         }>
-        
+
         {!selectedProgram ? (
           <Empty className="mt-20" description="Vui lòng chọn 1 khung chương trình ở thanh bên trái" image={<SolutionOutlined style={{ fontSize: 60, color: '#bfbfbf' }} />} />
         ) : (
-          <Table 
-            dataSource={curriculums} 
-            columns={columns} 
-            rowKey="subject_id" 
+          <Table
+            dataSource={curriculums}
+            columns={columns}
+            rowKey="subject_id"
             pagination={{ pageSize: 20 }}
             loading={loading}
             size="small"
