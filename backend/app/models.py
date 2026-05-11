@@ -40,6 +40,7 @@ class Lecturer(Base):
     lecturer_code = Column(String(20), unique=True, nullable=False)
     type = Column(Enum(LecturerTypeEnum), default=LecturerTypeEnum.FULL_TIME)
     max_quota = Column(Integer, default=0) # Số tiết/buổi tối đa
+    position = Column(String(100), nullable=True) # Chức vụ
     
     user = relationship("User", back_populates="lecturer_profile")
     registrations = relationship("LecturerRegistration", back_populates="lecturer")

@@ -51,9 +51,17 @@ class LecturerBase(BaseModel):
     lecturer_code: str
     type: LecturerTypeEnum = LecturerTypeEnum.FULL_TIME
     max_quota: int = 0
+    position: Optional[str] = None
 
 class LecturerCreate(LecturerBase):
     user_id: Optional[int] = None
+
+class LecturerUpdate(BaseModel):
+    full_name: Optional[str] = None
+    lecturer_code: Optional[str] = None
+    type: Optional[LecturerTypeEnum] = None
+    max_quota: Optional[int] = None
+    position: Optional[str] = None
 
 class Lecturer(LecturerBase):
     lecturer_id: int
@@ -105,6 +113,9 @@ class ProgramCurriculumItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ProgramCurriculumUpdate(BaseModel):
+    semester_index: int
 
 
 # --- Class Schemas ---

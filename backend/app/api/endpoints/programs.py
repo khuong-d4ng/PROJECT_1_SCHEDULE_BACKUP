@@ -42,6 +42,30 @@ def get_curriculum(program_id: int, db: Session = Depends(get_db)):
         ))
     return results
 
+@router.put("/{program_id}/curriculum/{subject_id}", response_model=schemas.ProgramCurriculumItem)
+def update_curriculum_subject(program_id: int, subject_id: int, payload: schemas.ProgramCurriculumUpdate, db: Session = Depends(get_db)):
+    mapping = db.query(models.ProgramCurriculum).filter(
+        models.ProgramCurriculum.program_id == program_id,
+        models.ProgramCurriculum.subject_id == subject_id
+    ).first()
+    
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Không tìm thấy môn học trong khung chương trình")
+        
+    mapping.semester_index = payload.semester_index
+    db.commit()
+    db.refresh(mapping)
+    
+    return schemas.ProgramCurriculumItem(
+        subject_id=mapping.subject_id,
+        subject_code=mapping.subject.subject_code,
+        subject_name=mapping.subject.subject_name,
+        credits=mapping.subject.credits,
+        theory_credits=mapping.subject.theory_credits,
+        practice_credits=mapping.subject.practice_credits,
+        semester_index=mapping.semester_index
+    )
+
 @router.post("/{program_id}/import-excel")
 async def import_curriculum(program_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
     prog = db.query(models.TrainingProgram).filter(models.TrainingProgram.id == program_id).first()

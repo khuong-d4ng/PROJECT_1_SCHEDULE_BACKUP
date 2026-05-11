@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Upload, Empty, Drawer, Tabs, Tag, Descriptions, Spin, Badge } from 'antd';
-import { PlusOutlined, CloudUploadOutlined, SearchOutlined, UserOutlined, BookOutlined, CalendarOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { Table, Button, Modal, Form, Input, Select, InputNumber, message, Upload, Empty, Drawer, Tabs, Tag, Descriptions, Spin } from 'antd';
+import { PlusOutlined, CloudUploadOutlined, SearchOutlined, BookOutlined, CalendarOutlined, ScheduleOutlined, EditOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 
 interface Lecturer {
@@ -9,6 +9,7 @@ interface Lecturer {
   full_name: string;
   type: string;
   max_quota: number;
+  position?: string;
 }
 
 interface RegistrationItem {
@@ -138,6 +139,8 @@ const LecturersPage: React.FC = () => {
   // Profile Drawer
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedLecturer, setSelectedLecturer] = useState<Lecturer | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [editForm] = Form.useForm();
 
   // Profile Tabs Data
   const [regLists, setRegLists] = useState<RegList[]>([]);
@@ -243,6 +246,22 @@ const LecturersPage: React.FC = () => {
     }
   };
 
+  const handleUpdate = async (values: any) => {
+    setSubmitting(true);
+    try {
+      if (!selectedLecturer) return;
+      const response = await apiClient.put(`/lecturers/${selectedLecturer.lecturer_id}`, values);
+      message.success('Cập nhật giảng viên thành công');
+      setIsEditModalOpen(false);
+      setSelectedLecturer(response.data);
+      fetchLecturers();
+    } catch (error: any) {
+      message.error(error.response?.data?.detail || 'Lỗi khi cập nhật giảng viên. Vui lòng kiểm tra lại.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handlePreviewUpload = async (options: any) => {
     const { file } = options;
     const formData = new FormData();
@@ -297,6 +316,11 @@ const LecturersPage: React.FC = () => {
       sorter: (a: Lecturer, b: Lecturer) => (a.type || '').localeCompare(b.type || '')
     },
     { 
+      title: 'Chức vụ', dataIndex: 'position', width: 150,
+      render: (val: string) => val || <span style={{ color: '#bfbfbf' }}>-</span>,
+      sorter: (a: Lecturer, b: Lecturer) => (a.position || '').localeCompare(b.position || '')
+    },
+    { 
       title: 'Chỉ tiêu (tiết)', dataIndex: 'max_quota', width: 120, align: 'center' as const, className: 'tabular-nums',
       sorter: (a: Lecturer, b: Lecturer) => (a.max_quota || 0) - (b.max_quota || 0)
     },
@@ -306,6 +330,7 @@ const LecturersPage: React.FC = () => {
     { title: 'Mã GV', dataIndex: 'lecturer_code' },
     { title: 'Họ và tên', dataIndex: 'full_name' },
     { title: 'Loại GV', dataIndex: 'type' },
+    { title: 'Chức vụ', dataIndex: 'position' },
   ];
 
   // --- Registration Tab Columns ---
@@ -436,12 +461,21 @@ const LecturersPage: React.FC = () => {
                     {selectedLecturer.lecturer_code}
                   </span>
                 </div>
+                <div style={{ marginLeft: 'auto' }}>
+                   <Button size="small" type="primary" icon={<EditOutlined />} onClick={() => {
+                       editForm.setFieldsValue(selectedLecturer);
+                       setIsEditModalOpen(true);
+                   }}>Chỉnh sửa</Button>
+                </div>
               </div>
               <Descriptions size="small" column={2} style={{ fontSize: '13px' }}>
                 <Descriptions.Item label="Phân loại">
                   <Tag color={selectedLecturer.type === 'Cơ hữu' ? 'green' : 'purple'} style={{ margin: 0 }}>
                     {selectedLecturer.type}
                   </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Chức vụ">
+                  {selectedLecturer.position ? <span style={{ fontWeight: 500 }}>{selectedLecturer.position}</span> : <span style={{ color: 'var(--color-text-muted)' }}>-</span>}
                 </Descriptions.Item>
                 <Descriptions.Item label="Chỉ tiêu">
                   <span className="tabular-nums" style={{ fontWeight: 600 }}>{selectedLecturer.max_quota} tiết</span>
@@ -617,6 +651,41 @@ const LecturersPage: React.FC = () => {
               { value: 'Cơ hữu', label: 'Cơ hữu' },
               { value: 'Thỉnh giảng', label: 'Thỉnh giảng' },
             ]} />
+          </Form.Item>
+          <Form.Item name="position" label="Chức vụ (Tùy chọn)">
+            <Input placeholder="VD: Trưởng bộ môn, Phó khoa…" autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="max_quota" label="Chỉ tiêu số tiết">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* Edit Modal */}
+      <Modal
+        title="Chỉnh sửa Thông tin Giảng viên"
+        open={isEditModalOpen}
+        onCancel={() => setIsEditModalOpen(false)}
+        onOk={() => editForm.submit()}
+        confirmLoading={submitting}
+        okText="Lưu thay đổi"
+        cancelText="Hủy"
+      >
+        <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
+          <Form.Item name="lecturer_code" label="Mã giảng viên" rules={[{ required: true, message: 'Vui lòng nhập mã GV' }]}>
+            <Input placeholder="VD: DN01800012…" autoComplete="off" spellCheck={false} />
+          </Form.Item>
+          <Form.Item name="full_name" label="Họ và tên" rules={[{ required: true, message: 'Vui lòng nhập họ tên' }]}>
+            <Input placeholder="VD: Nguyễn Văn A…" autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="type" label="Phân loại giảng viên" rules={[{ required: true }]}>
+            <Select options={[
+              { value: 'Cơ hữu', label: 'Cơ hữu' },
+              { value: 'Thỉnh giảng', label: 'Thỉnh giảng' },
+            ]} />
+          </Form.Item>
+          <Form.Item name="position" label="Chức vụ (Tùy chọn)">
+            <Input placeholder="VD: Trưởng bộ môn, Phó khoa…" autoComplete="off" />
           </Form.Item>
           <Form.Item name="max_quota" label="Chỉ tiêu số tiết">
             <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />

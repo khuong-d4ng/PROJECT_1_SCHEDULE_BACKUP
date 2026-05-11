@@ -26,6 +26,26 @@ def create_lecturer(lecturer: schemas.LecturerCreate, db: Session = Depends(get_
     db.refresh(new_lecturer)
     return new_lecturer
 
+@router.put("/{lecturer_id}", response_model=schemas.Lecturer)
+def update_lecturer(lecturer_id: int, lecturer: schemas.LecturerUpdate, db: Session = Depends(get_db)):
+    db_lecturer = db.query(models.Lecturer).filter(models.Lecturer.lecturer_id == lecturer_id).first()
+    if not db_lecturer:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giảng viên")
+    
+    update_data = lecturer.model_dump(exclude_unset=True)
+    
+    if "lecturer_code" in update_data and update_data["lecturer_code"] != db_lecturer.lecturer_code:
+        existing = db.query(models.Lecturer).filter(models.Lecturer.lecturer_code == update_data["lecturer_code"]).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Mã giảng viên đã tồn tại")
+
+    for key, value in update_data.items():
+        setattr(db_lecturer, key, value)
+        
+    db.commit()
+    db.refresh(db_lecturer)
+    return db_lecturer
+
 # --- Thêm mới chức năng Import Web ---
 
 class LecturerImportItem(schemas.LecturerBase):
@@ -58,6 +78,7 @@ async def preview_lecturers_import(file: UploadFile = File(...)):
                 lecturer_code=code,
                 full_name=name,
                 type=l_type,
+                position=role if role != 'nan' else None,
                 max_quota=0
             ))
         return preview_data

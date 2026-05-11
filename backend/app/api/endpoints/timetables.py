@@ -196,7 +196,8 @@ def get_session_stats(session_id: int, db: Session = Depends(get_db)):
             "hours": d["hours"],
             "subjects": len(d["subjects"]),
             "classes": len(d["classes"]),
-            "slots": len(d["slots"])
+            "slots": len(d["slots"]),
+            "slots_list": list(d["slots"])
         }
     
     return result
