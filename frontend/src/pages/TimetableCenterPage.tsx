@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Button, Table, Modal,
   Input, Select, Space, Card, message, Steps, Row, Col,
-  Progress, Tag, Tooltip
+  Progress, Tag, Tooltip, DatePicker
 } from 'antd';
 const { CheckableTag } = Tag;
 import {
@@ -11,6 +11,7 @@ import {
   SortAscendingOutlined, SortDescendingOutlined
 } from '@ant-design/icons';
 import apiClient from '../api/client';
+import dayjs from 'dayjs';
 import type { ColumnsType } from 'antd/es/table';
 import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
@@ -121,6 +122,42 @@ export default function TimetableCenterPage() {
     program_ids: [] as number[]
   });
   const [entriesConfig, setEntriesConfig] = useState<any>({});
+
+  // Date Config Modal State
+  const [isDateModalOpen, setIsDateModalOpen] = useState(false);
+  const [dateModalSessionId, setDateModalSessionId] = useState<number | null>(null);
+  const [dateModalSessionName, setDateModalSessionName] = useState<string>('');
+  const [startDateVal, setStartDateVal] = useState<dayjs.Dayjs | null>(null);
+  const [dateModalLoading, setDateModalLoading] = useState(false);
+
+  const handleOpenDateModal = (session: any) => {
+    setDateModalSessionId(session.session_id);
+    setDateModalSessionName(session.plan_name);
+    setStartDateVal(session.start_date ? dayjs(session.start_date) : null);
+    setIsDateModalOpen(true);
+  };
+
+  const handleSaveSessionDate = async () => {
+    if (!startDateVal) {
+      message.warning("Vui lòng chọn ngày bắt đầu");
+      return;
+    }
+    setDateModalLoading(true);
+    try {
+      const formatted = startDateVal.format('YYYY-MM-DD');
+      await apiClient.put(`/timetables/${dateModalSessionId}/dates`, { start_date: formatted });
+      message.success("Thiết lập thời gian đợt TKB thành công!");
+      setIsDateModalOpen(false);
+      fetchSessions();
+      if (selectedSessionId === dateModalSessionId && dateModalSessionId !== null) {
+        loadSessionDetails(dateModalSessionId);
+      }
+    } catch (e: any) {
+      message.error(e.response?.data?.detail || "Lỗi lưu cấu hình ngày");
+    } finally {
+      setDateModalLoading(false);
+    }
+  };
 
   // --- DATA LOADING ---
   const fetchSessions = async () => {
@@ -245,6 +282,9 @@ export default function TimetableCenterPage() {
       await apiClient.put(`/timetables/rows/${row_id}`, { [field]: value });
       if (field === 'main_lecturer_id' || field === 'prac_lecturer_id') {
         fetchStats(selectedSessionId!);
+      }
+      if (field === 'end_date') {
+        fetchSessions();
       }
     } catch { message.error("Lỗi cập nhật dòng TKB"); }
   };
@@ -439,6 +479,32 @@ export default function TimetableCenterPage() {
           options={['C-T2', 'C-T3', 'C-T4', 'C-T5', 'C-T6', 'C-T7'].map(s => ({ value: s, label: s }))} />
       )
     },
+    {
+      title: 'Thời gian',
+      key: 'dates',
+      width: 250,
+      render: (_, record) => {
+        if (!record.start_date) {
+          return <span className="text-gray-400 italic text-xs">Chưa thiết lập</span>;
+        }
+        return (
+          <Space size="small">
+            <span className="text-xs">{dayjs(record.start_date).format('DD/MM/YYYY')}</span>
+            <span>-</span>
+            <DatePicker
+              size="small"
+              value={record.end_date ? dayjs(record.end_date) : null}
+              format="DD/MM/YYYY"
+              allowClear={false}
+              onChange={(date) => {
+                const formattedDate = date ? date.format('YYYY-MM-DD') : null;
+                handleRowChange(record.row_id, 'end_date', formattedDate);
+              }}
+            />
+          </Space>
+        );
+      }
+    },
   ];
 
   // --- Derive LT/TH role sets from prefMap (from the linked registration list) ---
@@ -518,7 +584,7 @@ export default function TimetableCenterPage() {
             {/* Toolbar */}
             <div style={{ background: 'var(--color-white)', padding: '10px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Button size="small" onClick={() => { setSelectedSessionId(null); setFocusedSubjectId(null); }}>← Quay lại</Button>
+                <Button size="small" onClick={() => { setSelectedSessionId(null); setFocusedSubjectId(null); fetchSessions(); }}>← Quay lại</Button>
                 <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }}>
                   {curSession?.plan_name}
                 </span>
@@ -743,7 +809,8 @@ export default function TimetableCenterPage() {
         {sessions.map(s => (
           <Col span={8} key={s.session_id}>
             <Card hoverable className="h-full" style={{ borderTop: '3px solid var(--color-primary)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-card)' }} actions={[
-              <Button type="link" icon={<EyeOutlined />} onClick={() => loadSessionDetails(s.session_id)}>Truy cập Workspace</Button>,
+              <Button type="link" icon={<EyeOutlined />} onClick={() => loadSessionDetails(s.session_id)}>Workspace</Button>,
+              <Button type="link" icon={<CalendarOutlined />} onClick={() => handleOpenDateModal(s)}>Thời gian</Button>,
               <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDeleteSession(s.session_id)}>Xóa</Button>
             ]}>
               <Card.Meta
@@ -751,6 +818,12 @@ export default function TimetableCenterPage() {
                 description={
                   <div className="mt-2 space-y-2">
                     <div><CalendarOutlined className="mr-2" />Ngày tạo: {s.created_at}</div>
+                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                      <CalendarOutlined className="mr-2" />
+                      <span>
+                        Thời gian: {s.start_date ? `${dayjs(s.start_date).format('DD/MM/YYYY')} - ${s.end_date ? dayjs(s.end_date).format('DD/MM/YYYY') : '?'}` : 'Chưa thiết lập'}
+                      </span>
+                    </div>
                     <div className="text-xs text-gray-400">Trạng thái: {s.status}</div>
                   </div>
                 }
@@ -849,6 +922,34 @@ export default function TimetableCenterPage() {
             </div>
           </div>
         )}
+      </Modal>
+
+      {/* MODAL DATE CONFIG */}
+      <Modal
+        title={`Thiết lập thời gian Đợt TKB: ${dateModalSessionName}`}
+        open={isDateModalOpen}
+        onCancel={() => setIsDateModalOpen(false)}
+        onOk={handleSaveSessionDate}
+        confirmLoading={dateModalLoading}
+        okText="Lưu"
+        cancelText="Hủy"
+        destroyOnClose
+      >
+        <div style={{ padding: '16px 0' }}>
+          <div style={{ background: '#eff6ff', border: '1px solid #dbeafe', color: '#1e40af', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
+            Chọn ngày bắt đầu cho đợt TKB. Hệ thống sẽ tự động gán ngày bắt đầu này cho toàn bộ các lớp môn học thuộc đợt, và tự động tính toán ngày kết thúc cho mỗi môn (mỗi tuần 1 buổi, tối đa 4 tiết).
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontWeight: 600, color: '#374151', fontSize: '13.5px' }}>Ngày bắt đầu (*):</span>
+            <DatePicker
+              style={{ width: '100%' }}
+              value={startDateVal}
+              onChange={val => setStartDateVal(val)}
+              format="DD/MM/YYYY"
+              placeholder="Chọn ngày bắt đầu"
+            />
+          </div>
+        </div>
       </Modal>
     </div>
   );

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Card, Button, Table, Modal, Form, Input, Select, message, Upload, Empty, Spin } from 'antd';
-import { PlusOutlined, UploadOutlined, SolutionOutlined, SearchOutlined, EditOutlined, HolderOutlined } from '@ant-design/icons';
-import { DndContext, DragOverlay, useDraggable, useDroppable, closestCenter } from '@dnd-kit/core';
+import { PlusOutlined, UploadOutlined, SolutionOutlined, EditOutlined, HolderOutlined } from '@ant-design/icons';
+import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import apiClient from '../api/client';

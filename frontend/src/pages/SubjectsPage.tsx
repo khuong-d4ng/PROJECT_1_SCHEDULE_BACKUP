@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Table, Button, Modal, Form, Input, InputNumber, message, Empty, Drawer, Descriptions, Tag, Space } from 'antd';
-import { PlusOutlined, SearchOutlined, BookOutlined, EditOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined, BookOutlined, SaveOutlined, CloseOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 
 interface Subject {

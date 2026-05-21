@@ -1,10 +1,10 @@
-import { BrowserRouter as Router, Routes, Route, Link, useLocation } from 'react-router-dom';
-import { Button, ConfigProvider, Select, Spin, message } from 'antd';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { Button, ConfigProvider, Select, Spin, message, Tag, Table } from 'antd';
 import {
   BookOutlined, TeamOutlined, AppstoreOutlined,
   BankOutlined, CalendarOutlined, FormOutlined,
-  DashboardOutlined, ThunderboltOutlined, DownloadOutlined,
-  UploadOutlined
+  DashboardOutlined, ThunderboltOutlined,
+  UploadOutlined, LogoutOutlined
 } from '@ant-design/icons';
 import { useState, useEffect, useMemo } from 'react';
 import SubjectsPage from './pages/SubjectsPage';
@@ -13,7 +13,10 @@ import RegistrationsPage from './pages/RegistrationsPage';
 import CurriculumPage from './pages/CurriculumPage';
 import TimetableCenterPage from './pages/TimetableCenterPage';
 import ClassesPage from './pages/ClassesPage';
+import LoginPage from './pages/LoginPage';
+import LecturerPortalPage from './pages/LecturerPortalPage';
 import apiClient from './api/client';
+import dayjs from 'dayjs';
 
 /* ============ SIDEBAR LINK ============ */
 const SidebarLink = ({ to, icon, children }: { to: string; icon: React.ReactNode; children: React.ReactNode }) => {
@@ -72,36 +75,69 @@ const SidebarSection = ({ title }: { title: string }) => (
 
 /* ============ DASHBOARD ============ */
 const DashboardPage = () => {
+  const currentUser = useMemo(() => {
+    const stored = localStorage.getItem('user_info');
+    return stored ? JSON.parse(stored) : null;
+  }, []);
+
+  const isLecturer = currentUser?.role === 'Giảng viên';
+
+  // State for Admin / Scheduler Dashboard
   const [stats, setStats] = useState({ subjects: 0, lecturers: 0, sessions: 0 });
-  const [dashboardSessions, setDashboardSessions] = useState<any[]>([]);
-  const [selectedDashboardSession, setSelectedDashboardSession] = useState<number | null>(null);
   const [allLecturers, setAllLecturers] = useState<any[]>([]);
   const [sessionStats, setSessionStats] = useState<Record<string, any>>({});
-  const [loadingSchedule, setLoadingSchedule] = useState(false);
   const [sortBy, setSortBy] = useState<'workload' | 'hours' | 'name'>('workload');
 
+  // State for Lecturer Dashboard
+  const [lecturerProfile, setLecturerProfile] = useState<any>(null);
+  const [lecturerTimetable, setLecturerTimetable] = useState<any>({
+    sessions: [],
+    rows: [],
+    summary: { total_classes: 0, total_subjects: 0, total_hours: 0, slots: [] }
+  });
+  const [loadingLecturerData, setLoadingLecturerData] = useState(false);
+
+  // Common State
+  const [dashboardSessions, setDashboardSessions] = useState<any[]>([]);
+  const [selectedDashboardSession, setSelectedDashboardSession] = useState<number | null>(null);
+  const [loadingSchedule, setLoadingSchedule] = useState(false);
+
+  // Load basic info
   useEffect(() => {
     const load = async () => {
       try {
-        const [subRes, lecRes, sesRes] = await Promise.all([
-          apiClient.get('/subjects/'),
-          apiClient.get('/lecturers/'),
-          apiClient.get('/timetables/'),
-        ]);
-        setStats({
-          subjects: subRes.data.length,
-          lecturers: lecRes.data.length,
-          sessions: sesRes.data.length,
-        });
-        setDashboardSessions(sesRes.data);
-        setAllLecturers(lecRes.data);
+        if (isLecturer) {
+          if (!currentUser?.lecturer_id) return;
+          setLoadingLecturerData(true);
+          const [profRes, sesRes] = await Promise.all([
+            apiClient.get(`/lecturers/${currentUser.lecturer_id}`),
+            apiClient.get('/timetables/'),
+          ]);
+          setLecturerProfile(profRes.data);
+          setDashboardSessions(sesRes.data);
+          setLoadingLecturerData(false);
+        } else {
+          const [subRes, lecRes, sesRes] = await Promise.all([
+            apiClient.get('/subjects/'),
+            apiClient.get('/lecturers/'),
+            apiClient.get('/timetables/'),
+          ]);
+          setStats({
+            subjects: subRes.data.length,
+            lecturers: lecRes.data.length,
+            sessions: sesRes.data.length,
+          });
+          setDashboardSessions(sesRes.data);
+          setAllLecturers(lecRes.data);
+        }
       } catch {}
     };
     load();
-  }, []);
+  }, [isLecturer, currentUser]);
 
+  // Load schedule stats for Admin / Scheduler
   useEffect(() => {
-    if (!selectedDashboardSession) return;
+    if (isLecturer || !selectedDashboardSession) return;
     const fetchSessionStats = async () => {
       setLoadingSchedule(true);
       try {
@@ -114,8 +150,29 @@ const DashboardPage = () => {
       }
     };
     fetchSessionStats();
-  }, [selectedDashboardSession]);
+  }, [isLecturer, selectedDashboardSession]);
 
+  // Load schedule for Lecturer
+  useEffect(() => {
+    if (!isLecturer || !currentUser?.lecturer_id) return;
+    const fetchLecturerTimetable = async () => {
+      setLoadingSchedule(true);
+      try {
+        const url = selectedDashboardSession
+          ? `/lecturers/${currentUser.lecturer_id}/timetable-info?session_id=${selectedDashboardSession}`
+          : `/lecturers/${currentUser.lecturer_id}/timetable-info`;
+        const res = await apiClient.get(url);
+        setLecturerTimetable(res.data);
+      } catch {
+        message.error("Lỗi lấy lịch giảng dạy");
+      } finally {
+        setLoadingSchedule(false);
+      }
+    };
+    fetchLecturerTimetable();
+  }, [isLecturer, currentUser, selectedDashboardSession]);
+
+  // Admin schedule grid helper
   const renderScheduleGrid = (slotsList: string[]) => {
     const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
     const hasSlot = (slotStr: string) => slotsList.includes(slotStr);
@@ -142,6 +199,193 @@ const DashboardPage = () => {
     );
   };
 
+  // Lecturer schedule grid helper
+  const renderLecturerWeeklyGrid = (busySlots: string[]) => {
+    const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
+    // Helper to match slot formats returned: "Sáng T2" -> isBusy('Sáng', 'T2')
+    const isBusy = (shift: string, day: string) => busySlots.includes(`${shift} ${day}`);
+    const totalBusy = busySlots.length;
+    const totalEmpty = 12 - totalBusy;
+
+    return (
+      <div style={{ background: '#fff', borderRadius: '12px', padding: '20px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <span style={{ fontSize: '15px', fontWeight: 600, color: '#374151' }}>Lịch tuần (Buổi bận)</span>
+          <span style={{ fontSize: '13px', color: '#6b7280' }}>
+            Buổi đã xếp: <strong style={{ color: '#f37423' }}>{totalBusy}/12</strong> | Trống: <strong style={{ color: '#16a34a' }}>{totalEmpty} buổi</strong>
+          </span>
+        </div>
+        
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }}>
+            <thead>
+              <tr>
+                <th style={{ width: '80px', padding: '10px', fontWeight: 500, color: '#9ca3af', borderBottom: '1px solid #f3f4f6' }}></th>
+                {days.map(d => (
+                  <th key={d} style={{ padding: '10px', fontWeight: 600, color: '#4b5563', fontSize: '14px', borderBottom: '1px solid #f3f4f6' }}>{d}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={{ padding: '12px 10px', fontWeight: 500, color: '#4b5563', fontSize: '13px', borderBottom: '1px solid #f3f4f6', textAlign: 'left' }}>Sáng</td>
+                {days.map(d => {
+                  const busy = isBusy('Sáng', d);
+                  return (
+                    <td key={`S-${d}`} style={{ padding: '12px 6px', borderBottom: '1px solid #f3f4f6' }}>
+                      {busy ? (
+                        <div style={{
+                          width: '40px', height: '40px', margin: '0 auto',
+                          background: 'linear-gradient(135deg, #f37423, #ff9a56)',
+                          color: '#fff', borderRadius: '8px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '18px', boxShadow: '0 4px 10px rgba(243, 116, 35, 0.2)'
+                        }}>
+                          ✓
+                        </div>
+                      ) : (
+                        <div style={{
+                          width: '40px', height: '40px', margin: '0 auto',
+                          background: '#f9fafb', border: '1px dashed #d1d5db',
+                          color: '#9ca3af', borderRadius: '8px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '14px'
+                        }}>
+                          -
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+              <tr>
+                <td style={{ padding: '12px 10px', fontWeight: 500, color: '#4b5563', fontSize: '13px', textAlign: 'left' }}>Chiều</td>
+                {days.map(d => {
+                  const busy = isBusy('Chiều', d);
+                  return (
+                    <td key={`C-${d}`} style={{ padding: '12px 6px' }}>
+                      {busy ? (
+                        <div style={{
+                          width: '40px', height: '40px', margin: '0 auto',
+                          background: 'linear-gradient(135deg, #f37423, #ff9a56)',
+                          color: '#fff', borderRadius: '8px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '18px', boxShadow: '0 4px 10px rgba(243, 116, 35, 0.2)'
+                        }}>
+                          ✓
+                        </div>
+                      ) : (
+                        <div style={{
+                          width: '40px', height: '40px', margin: '0 auto',
+                          background: '#f9fafb', border: '1px dashed #d1d5db',
+                          color: '#9ca3af', borderRadius: '8px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: '14px'
+                        }}>
+                          -
+                        </div>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '20px', borderTop: '1px solid #f3f4f6', paddingTop: '16px' }}>
+          {busySlots.map(slot => (
+            <span key={slot} style={{
+              background: '#fff7ed', color: '#ea580c', border: '1px solid #ffedd5',
+              padding: '4px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 500
+            }}>
+              {slot}
+            </span>
+          ))}
+          {busySlots.length === 0 && (
+            <span style={{ fontSize: '12px', color: '#9ca3af', fontStyle: 'italic' }}>Không có buổi bận nào</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Lecturer profile card helper
+  const renderLecturerProfileCard = (profile: any) => {
+    if (!profile) return null;
+    const nameParts = profile.full_name.split(' ');
+    const initials = nameParts.length > 0 ? nameParts[nameParts.length - 1][0] : '?';
+
+    return (
+      <div style={{
+        background: '#fff',
+        borderRadius: '12px',
+        border: '1px solid #e5e7eb',
+        padding: '24px',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '20px'
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div style={{
+            width: '64px',
+            height: '64px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, #f37423, #ff9a56)',
+            color: '#fff',
+            fontSize: '28px',
+            fontWeight: 700,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            boxShadow: '0 4px 12px rgba(243, 116, 35, 0.25)'
+          }}>
+            {initials}
+          </div>
+          <div>
+            <h3 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: '#111827' }}>
+              {profile.full_name}
+            </h3>
+            <span style={{ fontSize: '13px', color: '#6b7280', fontWeight: 500 }}>
+              {profile.lecturer_code}
+            </span>
+          </div>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', borderTop: '1px solid #f3f4f6', paddingTop: '16px' }}>
+          <div>
+            <div style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Phân loại</div>
+            <div style={{ marginTop: '4px' }}>
+              <span style={{
+                background: profile.type === 'Cơ hữu' ? '#f0fdf4' : '#eff6ff',
+                color: profile.type === 'Cơ hữu' ? '#16a34a' : '#2563eb',
+                border: profile.type === 'Cơ hữu' ? '1px solid #dcfce7' : '1px solid #dbeafe',
+                padding: '2px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: 600
+              }}>
+                {profile.type}
+              </span>
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Chức vụ</div>
+            <div style={{ marginTop: '4px', fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+              {profile.position || 'Giảng viên'}
+            </div>
+          </div>
+
+          <div>
+            <div style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Chỉ tiêu</div>
+            <div style={{ marginTop: '4px', fontSize: '13px', fontWeight: 600, color: '#374151' }}>
+              {profile.max_quota || 0} tiết
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const sortedLecturers = useMemo(() => {
     return [...allLecturers].sort((a, b) => {
       const statsA = sessionStats[a.lecturer_id] || { slots: 0, hours: 0 };
@@ -159,12 +403,146 @@ const DashboardPage = () => {
     });
   }, [allLecturers, sessionStats, sortBy]);
 
+  const coHuuCount = useMemo(() => allLecturers.filter(l => l.type === 'Cơ hữu').length, [allLecturers]);
+  const thinhGiangCount = useMemo(() => allLecturers.filter(l => l.type === 'Thỉnh giảng').length, [allLecturers]);
+  const coHuuPct = stats.lecturers > 0 ? Math.round((coHuuCount / stats.lecturers) * 100) : 0;
+  const thinhGiangPct = stats.lecturers > 0 ? Math.round((thinhGiangCount / stats.lecturers) * 100) : 0;
+
   const cards = [
     { label: 'Tổng Giảng viên', value: stats.lecturers, icon: <TeamOutlined />, color: 'var(--color-primary)' },
     { label: 'Tổng Môn học', value: stats.subjects, icon: <BookOutlined />, color: 'var(--color-accent)' },
     { label: 'Đợt TKB', value: stats.sessions, icon: <CalendarOutlined />, color: 'var(--color-success)' },
   ];
 
+  /* ─── RENDERING LECTURER DASHBOARD ─── */
+  if (isLecturer) {
+    const busySlotsList = lecturerTimetable?.summary?.slots || [];
+    const tableData = lecturerTimetable?.rows || [];
+
+    const formatSlot = (morning: string | null, afternoon: string | null) => {
+      if (morning) {
+        const day = morning.replace('S-T', '');
+        return `Sáng Thứ ${day === '7' ? '7' : day}`;
+      }
+      if (afternoon) {
+        const day = afternoon.replace('C-T', '');
+        return `Chiều Thứ ${day === '7' ? '7' : day}`;
+      }
+      return '-';
+    };
+
+    const columns = [
+      {
+        title: 'Đợt TKB',
+        dataIndex: 'plan_name',
+        key: 'plan_name',
+        render: (text: string) => <strong style={{ color: '#374151' }}>{text}</strong>
+      },
+      {
+        title: 'Lớp',
+        dataIndex: 'class_name',
+        key: 'class_name',
+        render: (text: string) => <Tag color="blue">{text}</Tag>
+      },
+      {
+        title: 'Mã Môn',
+        dataIndex: 'subject_code',
+        key: 'subject_code',
+      },
+      {
+        title: 'Môn học',
+        dataIndex: 'subject_name',
+        key: 'subject_name',
+        render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>
+      },
+      {
+        title: 'Vai trò',
+        dataIndex: 'role',
+        key: 'role',
+        render: (role: string) => (
+          <Tag color={role === 'LT' ? 'orange' : 'green'}>
+            {role === 'LT' ? 'Lý thuyết' : 'Thực hành'}
+          </Tag>
+        )
+      },
+      {
+        title: 'Ca dạy (Buổi bận)',
+        key: 'shift',
+        render: (_: any, record: any) => formatSlot(record.morning_day, record.afternoon_day)
+      },
+      {
+        title: 'Số tiết',
+        key: 'hours',
+        render: (_: any, record: any) => {
+          const hours = record.role === 'LT' ? record.theory_hours : record.practice_hours;
+          return `${hours} tiết`;
+        }
+      },
+      {
+        title: 'Thời gian',
+        key: 'duration',
+        render: (_: any, record: any) => {
+          if (record.start_date && record.end_date) {
+            return `${dayjs(record.start_date).format('DD/MM/YYYY')} - ${dayjs(record.end_date).format('DD/MM/YYYY')}`;
+          }
+          return 'Chưa xác định';
+        }
+      }
+    ];
+
+    return (
+      <Spin spinning={loadingLecturerData || loadingSchedule}>
+        <div>
+          <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '24px', color: 'var(--color-text)' }}>
+            Tổng quan Cá nhân
+          </h2>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px', marginBottom: '28px' }}>
+            {/* Lecturer Profile */}
+            {renderLecturerProfileCard(lecturerProfile)}
+
+            {/* Weekly busy grid */}
+            <div>
+              <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end', gap: '12px', alignItems: 'center' }}>
+                <span style={{ fontSize: '13px', color: 'var(--color-text-secondary)' }}>Chọn Đợt TKB:</span>
+                <Select
+                  placeholder="Tất cả TKB"
+                  style={{ width: 250 }}
+                  value={selectedDashboardSession}
+                  onChange={v => setSelectedDashboardSession(v)}
+                  options={[
+                    { label: 'Tất cả TKB', value: null },
+                    ...dashboardSessions.map(s => ({ label: s.plan_name, value: s.session_id }))
+                  ]}
+                  allowClear
+                />
+              </div>
+              {renderLecturerWeeklyGrid(busySlotsList)}
+            </div>
+          </div>
+
+          <div style={{
+            background: 'var(--color-white)',
+            borderRadius: 'var(--radius-lg)',
+            border: '1px solid var(--color-border)',
+            padding: '24px',
+            boxShadow: 'var(--shadow-card)',
+          }}>
+            <h3 style={{ fontSize: '16px', fontWeight: 600, marginBottom: '16px' }}>Chi tiết Lịch giảng dạy</h3>
+            <Table
+              dataSource={tableData}
+              columns={columns}
+              rowKey="row_id"
+              pagination={{ pageSize: 5 }}
+              locale={{ emptyText: 'Chưa có lịch dạy nào được phân công' }}
+            />
+          </div>
+        </div>
+      </Spin>
+    );
+  }
+
+  /* ─── RENDERING ADMIN / SCHEDULER DASHBOARD ─── */
   return (
     <div>
       <h2 style={{ fontSize: '22px', fontWeight: 700, marginBottom: '24px', color: 'var(--color-text)' }}>
@@ -183,6 +561,17 @@ const DashboardPage = () => {
               <div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, marginBottom: '8px' }}>{c.label}</div>
                 <div style={{ fontSize: '32px', fontWeight: 700, color: c.color, fontVariantNumeric: 'tabular-nums' }}>{c.value}</div>
+                
+                {c.label === 'Tổng Giảng viên' && (
+                  <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', gap: '16px' }}>
+                    <div>
+                      Cơ hữu: <b style={{ color: 'var(--color-text)' }}>{coHuuCount}</b> <span style={{ opacity: 0.7 }}>({coHuuPct}%)</span>
+                    </div>
+                    <div>
+                      Thỉnh giảng: <b style={{ color: 'var(--color-text)' }}>{thinhGiangCount}</b> <span style={{ opacity: 0.7 }}>({thinhGiangPct}%)</span>
+                    </div>
+                  </div>
+                )}
               </div>
               <div style={{
                 fontSize: '22px',
@@ -300,6 +689,23 @@ const DashboardPage = () => {
 
 /* ============ APP ============ */
 function App() {
+  const [currentUser, setCurrentUser] = useState<any>(() => {
+    const stored = localStorage.getItem('user_info');
+    return stored ? JSON.parse(stored) : null;
+  });
+
+  const handleLoginSuccess = (_token: string, user: any) => {
+    setCurrentUser(user);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('access_token');
+    localStorage.removeItem('user_info');
+    setCurrentUser(null);
+  };
+
+  const isStaff = currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Cán bộ xếp lịch');
+
   return (
     <ConfigProvider
       theme={{
@@ -311,95 +717,126 @@ function App() {
       }}
     >
       <Router>
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg)' }}>
-          {/* Skip link */}
-          <a href="#main-content" className="skip-link">Bỏ qua tới nội dung chính</a>
+        {/* Not logged in -> show login page */}
+        {!currentUser ? (
+          <Routes>
+            <Route path="*" element={<LoginPage onLoginSuccess={handleLoginSuccess} />} />
+          </Routes>
+        ) : (
+          <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg)' }}>
+            {/* Skip link */}
+            <a href="#main-content" className="skip-link">Bỏ qua tới nội dung chính</a>
 
-          {/* ─── HEADER ─── */}
-          <header style={{
-            background: 'var(--color-primary)',
-            color: 'var(--color-white)',
-            padding: '0 24px',
-            height: '52px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            boxShadow: '0 2px 8px rgba(243, 116, 35, 0.25)',
-            position: 'relative',
-            zIndex: 100,
-          }} role="banner">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '22px' }}>🎓</span>
-              <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.3px' }}>
-                Quản lý Phân công TKB
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <span style={{ fontSize: '13px', opacity: 0.9 }}>Cán bộ xếp lịch</span>
-              <Button
-                size="small"
-                style={{
-                  borderColor: 'rgba(255,255,255,0.5)',
-                  color: 'white',
-                  fontSize: '12px',
-                  background: 'rgba(255,255,255,0.15)',
-                }}
-              >
-                Đăng xuất
-              </Button>
-            </div>
-          </header>
-
-          {/* ─── BODY ─── */}
-          <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-            {/* ─── SIDEBAR ─── */}
-            <aside style={{
-              width: '240px',
-              background: 'var(--color-white)',
-              borderRight: '1px solid var(--color-border)',
+            {/* ─── HEADER ─── */}
+            <header style={{
+              background: 'var(--color-primary)',
+              color: 'var(--color-white)',
+              padding: '0 24px',
+              height: '52px',
               display: 'flex',
-              flexDirection: 'column',
-              flexShrink: 0,
-            }}>
-              <nav aria-label="Điều hướng chính" style={{ flex: 1, padding: '8px 10px', overflowY: 'auto' }}>
-                <SidebarLink to="/" icon={<DashboardOutlined />}>Tổng quan</SidebarLink>
-
-                <SidebarSection title="Quản lý Dữ liệu" />
-                <SidebarLink to="/subjects" icon={<BookOutlined />}>Môn học</SidebarLink>
-                <SidebarLink to="/lecturers" icon={<TeamOutlined />}>Giảng viên</SidebarLink>
-                <SidebarLink to="/curriculum" icon={<AppstoreOutlined />}>Chương trình Đào tạo</SidebarLink>
-                <SidebarLink to="/classes" icon={<BankOutlined />}>Lớp Cố định</SidebarLink>
-
-                <SidebarSection title="Phân công TKB" />
-                <SidebarLink to="/timetable" icon={<CalendarOutlined />}>Workspace TKB</SidebarLink>
-                <SidebarLink to="/registrations" icon={<FormOutlined />}>Nguyện vọng Giảng dạy</SidebarLink>
-              </nav>
-
-              {/* Bottom version */}
-              <div style={{
-                padding: '12px 14px',
-                borderTop: '1px solid var(--color-border-light)',
-                fontSize: '11px',
-                color: 'var(--color-text-muted)',
-              }}>
-                Phiên bản 1.0 — 2026
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              boxShadow: '0 2px 8px rgba(243, 116, 35, 0.25)',
+              position: 'relative',
+              zIndex: 100,
+            }} role="banner">
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '22px' }}>🎓</span>
+                <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.3px' }}>
+                  Quản lý Phân công TKB
+                </span>
               </div>
-            </aside>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <Tag color="rgba(255,255,255,0.2)" style={{ color: 'white', border: 'none', fontSize: '11px' }}>
+                  {currentUser.role}
+                </Tag>
+                <span style={{ fontSize: '13px', opacity: 0.95, fontWeight: 500 }}>
+                  {currentUser.full_name || currentUser.username}
+                </span>
+                <Button
+                  size="small"
+                  icon={<LogoutOutlined />}
+                  onClick={handleLogout}
+                  style={{
+                    borderColor: 'rgba(255,255,255,0.5)',
+                    color: 'white',
+                    fontSize: '12px',
+                    background: 'rgba(255,255,255,0.15)',
+                  }}
+                >
+                  Đăng xuất
+                </Button>
+              </div>
+            </header>
 
-            {/* ─── MAIN CONTENT ─── */}
-            <main id="main-content" style={{ flex: 1, padding: '24px', overflow: 'auto' }}>
-              <Routes>
-                <Route path="/" element={<DashboardPage />} />
-                <Route path="/subjects" element={<SubjectsPage />} />
-                <Route path="/lecturers" element={<LecturersPage />} />
-                <Route path="/curriculum" element={<CurriculumPage />} />
-                <Route path="/classes" element={<ClassesPage />} />
-                <Route path="/timetable" element={<TimetableCenterPage />} />
-                <Route path="/registrations" element={<RegistrationsPage />} />
-              </Routes>
-            </main>
+            {/* ─── BODY ─── */}
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+              {/* ─── SIDEBAR ─── */}
+              <aside style={{
+                width: '240px',
+                background: 'var(--color-white)',
+                borderRight: '1px solid var(--color-border)',
+                display: 'flex',
+                flexDirection: 'column',
+                flexShrink: 0,
+              }}>
+                <nav aria-label="Điều hướng chính" style={{ flex: 1, padding: '8px 10px', overflowY: 'auto' }}>
+                  <SidebarLink to="/" icon={<DashboardOutlined />}>Tổng quan</SidebarLink>
+
+                  {isStaff && (
+                    <>
+                      <SidebarSection title="Quản lý Dữ liệu" />
+                      <SidebarLink to="/subjects" icon={<BookOutlined />}>Môn học</SidebarLink>
+                      <SidebarLink to="/lecturers" icon={<TeamOutlined />}>Giảng viên</SidebarLink>
+                      <SidebarLink to="/curriculum" icon={<AppstoreOutlined />}>Chương trình Đào tạo</SidebarLink>
+                      <SidebarLink to="/classes" icon={<BankOutlined />}>Lớp Cố định</SidebarLink>
+
+                      <SidebarSection title="Phân công TKB" />
+                      <SidebarLink to="/timetable" icon={<CalendarOutlined />}>Workspace TKB</SidebarLink>
+                      <SidebarLink to="/registrations" icon={<FormOutlined />}>Nguyện vọng Giảng dạy</SidebarLink>
+                    </>
+                  )}
+
+                  {!isStaff && (
+                    <>
+                      <SidebarSection title="Giảng viên" />
+                      <SidebarLink to="/my-registrations" icon={<FormOutlined />}>Đăng ký Nguyện vọng</SidebarLink>
+                    </>
+                  )}
+                </nav>
+
+                {/* Bottom version */}
+                <div style={{
+                  padding: '12px 14px',
+                  borderTop: '1px solid var(--color-border-light)',
+                  fontSize: '11px',
+                  color: 'var(--color-text-muted)',
+                }}>
+                  Phiên bản 1.0 — 2026
+                </div>
+              </aside>
+
+              {/* ─── MAIN CONTENT ─── */}
+              <main id="main-content" style={{ flex: 1, padding: '24px', overflow: 'auto' }}>
+                <Routes>
+                  <Route path="/" element={<DashboardPage />} />
+                  {isStaff && (
+                    <>
+                      <Route path="/subjects" element={<SubjectsPage />} />
+                      <Route path="/lecturers" element={<LecturersPage />} />
+                      <Route path="/curriculum" element={<CurriculumPage />} />
+                      <Route path="/classes" element={<ClassesPage />} />
+                      <Route path="/timetable" element={<TimetableCenterPage />} />
+                    </>
+                  )}
+                  <Route path="/registrations" element={<RegistrationsPage />} />
+                  <Route path="/my-registrations" element={<LecturerPortalPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </main>
+            </div>
           </div>
-        </div>
+        )}
       </Router>
     </ConfigProvider>
   );

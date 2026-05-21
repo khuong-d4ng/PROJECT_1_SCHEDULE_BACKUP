@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Input, Select, Modal, Form, Tag, message, Space, Row, Col, Empty } from 'antd';
-import { PlusOutlined, LinkOutlined, SearchOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
+import { Table, Button, Input, Select, Modal, Form, Tag, message, Space, Row, Col, Empty } from 'antd';
+import { PlusOutlined, LinkOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 
 

@@ -10,7 +10,7 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app import models, schemas
-from app.models import Semester, SemesterStatusEnum
+from app.models import Semester, SemesterStatusEnum, RegistrationListSubject
 from fastapi.responses import Response
 
 router = APIRouter()
@@ -38,6 +38,89 @@ def delete_registration_list(list_id: int, db: Session = Depends(get_db)):
     db.commit()
     return {"message": "Đã xóa danh sách thành công"}
 
+@router.put("/lists/{list_id}/toggle-open")
+def toggle_open(list_id: int, db: Session = Depends(get_db)):
+    """Cán bộ bật/tắt trạng thái mở đăng ký cho GV."""
+    db_list = db.query(models.RegistrationList).filter(models.RegistrationList.list_id == list_id).first()
+    if not db_list:
+        raise HTTPException(status_code=404, detail="Không tìm thấy danh sách")
+    db_list.is_open = not db_list.is_open
+    db.commit()
+    db.refresh(db_list)
+    status = "mở" if db_list.is_open else "đóng"
+    return {"message": f"Đã {status} đợt đăng ký", "is_open": db_list.is_open}
+
+class SetSubjectsRequest(BaseModel):
+    subject_ids: List[int]
+
+@router.put("/lists/{list_id}/set-subjects")
+def set_list_subjects(list_id: int, req: SetSubjectsRequest, db: Session = Depends(get_db)):
+    """Gán danh sách môn học khả dụng cho 1 đợt đăng ký."""
+    db_list = db.query(models.RegistrationList).filter(models.RegistrationList.list_id == list_id).first()
+    if not db_list:
+        raise HTTPException(status_code=404, detail="Không tìm thấy danh sách")
+    
+    # Xóa cũ, thêm mới
+    db.query(models.RegistrationListSubject).filter(models.RegistrationListSubject.list_id == list_id).delete()
+    for sid in req.subject_ids:
+        db.add(models.RegistrationListSubject(list_id=list_id, subject_id=sid))
+    db.commit()
+    return {"message": f"Đã gán {len(req.subject_ids)} môn cho đợt đăng ký"}
+
+@router.get("/lists/{list_id}/subjects")
+def get_list_subjects(list_id: int, db: Session = Depends(get_db)):
+    """Lấy danh sách môn khả dụng của 1 đợt đăng ký."""
+    items = (
+        db.query(models.RegistrationListSubject)
+        .filter(models.RegistrationListSubject.list_id == list_id)
+        .all()
+    )
+    return [
+        {
+            "subject_id": i.subject.subject_id,
+            "subject_code": i.subject.subject_code,
+            "subject_name": i.subject.subject_name,
+        }
+        for i in items
+    ]
+
+class CurriculumSubjectQuery(BaseModel):
+    """Mỗi item: 1 program_id + danh sách semester_index."""
+    program_id: int
+    semester_indices: List[int]
+
+class CurriculumSubjectRequest(BaseModel):
+    selections: List[CurriculumSubjectQuery]
+
+@router.post("/curriculum-subjects")
+def get_curriculum_subjects(req: CurriculumSubjectRequest, db: Session = Depends(get_db)):
+    """Lấy danh sách môn từ curriculum theo program_id + semester_index.
+    Dùng cho wizard chọn môn khi tạo đợt đăng ký."""
+    subject_ids = set()
+    subjects = []
+    
+    for sel in req.selections:
+        rows = (
+            db.query(models.ProgramCurriculum)
+            .filter(
+                models.ProgramCurriculum.program_id == sel.program_id,
+                models.ProgramCurriculum.semester_index.in_(sel.semester_indices),
+            )
+            .all()
+        )
+        for row in rows:
+            if row.subject_id not in subject_ids:
+                subject_ids.add(row.subject_id)
+                subj = row.subject
+                subjects.append({
+                    "subject_id": subj.subject_id,
+                    "subject_code": subj.subject_code,
+                    "subject_name": subj.subject_name,
+                    "credits": subj.credits,
+                    "program_name": row.program.name if row.program else "",
+                    "semester_index": row.semester_index,
+                })
+    return subjects
 
 # --- 2. API: QUẢN LÝ DỮ LIỆU NGUYỆN VỌNG BÊN TRONG 1 LIST ---
 

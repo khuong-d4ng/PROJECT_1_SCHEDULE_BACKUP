@@ -1,26 +1,58 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
 from typing import List, Optional
+from pydantic import BaseModel
 import pandas as pd
 import io
 
 from app.core.database import get_db
+from app.core.security import hash_password
 from app import models, schemas
 from app.models import LecturerTypeEnum
 
 router = APIRouter()
 
+class LecturerCreateWithAccount(schemas.LecturerCreate):
+    account_username: Optional[str] = None
+    account_password: Optional[str] = None
+
 @router.get("/", response_model=List[schemas.Lecturer])
 def read_lecturers(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
     return db.query(models.Lecturer).offset(skip).limit(limit).all()
 
+@router.get("/{lecturer_id}", response_model=schemas.Lecturer)
+def read_lecturer(lecturer_id: int, db: Session = Depends(get_db)):
+    db_lecturer = db.query(models.Lecturer).filter(models.Lecturer.lecturer_id == lecturer_id).first()
+    if not db_lecturer:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giảng viên")
+    return db_lecturer
+
 @router.post("/", response_model=schemas.Lecturer)
-def create_lecturer(lecturer: schemas.LecturerCreate, db: Session = Depends(get_db)):
+def create_lecturer(lecturer: LecturerCreateWithAccount, db: Session = Depends(get_db)):
     db_lecturer = db.query(models.Lecturer).filter(models.Lecturer.lecturer_code == lecturer.lecturer_code).first()
     if db_lecturer:
         raise HTTPException(status_code=400, detail="Mã giảng viên đã tồn tại")
     
-    new_lecturer = models.Lecturer(**lecturer.model_dump())
+    # Create User account for the lecturer
+    username = lecturer.account_username or lecturer.lecturer_code
+    password = lecturer.account_password or "123456"
+    
+    existing_user = db.query(models.User).filter(models.User.username == username).first()
+    if existing_user:
+        raise HTTPException(status_code=400, detail=f"Username '{username}' đã tồn tại")
+    
+    user = models.User(
+        username=username,
+        email=f"{username}@lecturer.local",
+        password_hash=hash_password(password),
+        role=models.RoleEnum.LECTURER,
+    )
+    db.add(user)
+    db.flush()  # Get user_id
+    
+    lec_data = lecturer.model_dump(exclude={"account_username", "account_password"})
+    lec_data["user_id"] = user.user_id
+    new_lecturer = models.Lecturer(**lec_data)
     db.add(new_lecturer)
     db.commit()
     db.refresh(new_lecturer)
@@ -218,6 +250,8 @@ def get_lecturer_timetable_info(lecturer_id: int, session_id: Optional[int] = No
             morning_day=tr.morning_day,
             afternoon_day=tr.afternoon_day,
             role=role,
+            start_date=tr.start_date,
+            end_date=tr.end_date,
         ))
     
     # Sắp xếp slots theo thứ tự tuần

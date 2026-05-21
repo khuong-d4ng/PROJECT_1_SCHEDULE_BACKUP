@@ -21,6 +21,7 @@ def generate_timetable(payload: schemas.TimetableSessionCreate, db: Session = De
         new_session = models.SchedulingSession(
             plan_name=payload.plan_name,
             registration_list_id=payload.registration_list_id,
+            description=payload.description,
             status=models.TimetableSessionStatusEnum.ACTIVE
         )
         db.add(new_session)
@@ -106,10 +107,57 @@ def get_timetable_rows(session_id: int, db: Session = Depends(get_db)):
             main_lecturer_id=r.main_lecturer_id,
             prac_lecturer_id=r.prac_lecturer_id,
             main_lecturer_name=main_lec.full_name if main_lec else None,
-            prac_lecturer_name=prac_lec.full_name if prac_lec else None
+            prac_lecturer_name=prac_lec.full_name if prac_lec else None,
+            start_date=r.start_date,
+            end_date=r.end_date
         ))
         
     return result
+
+@router.put("/{session_id}/dates", response_model=schemas.TimetableSessionResponse)
+def update_session_dates(session_id: int, payload: schemas.SessionDateUpdate, db: Session = Depends(get_db)):
+    import math
+    from datetime import timedelta
+    
+    session = db.query(models.SchedulingSession).filter(models.SchedulingSession.session_id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Đợt TKB")
+        
+    start_date = payload.start_date
+    session.start_date = start_date
+    
+    # Update dates for all rows in the session
+    rows = db.query(models.TimetableRow).filter(models.TimetableRow.session_id == session_id).all()
+    for r in rows:
+        subject = r.subject
+        total_hours = 0
+        if subject:
+            total_hours = (subject.theory_hours or 0) + (subject.practice_hours or 0)
+        
+        # Calculate weeks
+        weeks = math.ceil(total_hours / 4)
+        if weeks < 1:
+            weeks = 1
+            
+        r.start_date = start_date
+        r.end_date = start_date + timedelta(days=weeks * 7)
+        
+    db.commit()
+    db.refresh(session)
+    return session
+
+@router.put("/{session_id}/info", response_model=schemas.TimetableSessionResponse)
+def update_session_info(session_id: int, payload: schemas.SessionInfoUpdate, db: Session = Depends(get_db)):
+    session = db.query(models.SchedulingSession).filter(models.SchedulingSession.session_id == session_id).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Đợt TKB")
+    if payload.plan_name is not None:
+        session.plan_name = payload.plan_name
+    if payload.description is not None:
+        session.description = payload.description
+    db.commit()
+    db.refresh(session)
+    return session
 
 @router.put("/rows/{row_id}", response_model=schemas.TimetableRowResponse)
 def update_timetable_row(row_id: int, payload: schemas.TimetableRowUpdate, db: Session = Depends(get_db)):
@@ -144,7 +192,9 @@ def update_timetable_row(row_id: int, payload: schemas.TimetableRowUpdate, db: S
         main_lecturer_id=row.main_lecturer_id,
         prac_lecturer_id=row.prac_lecturer_id,
         main_lecturer_name=main_lec.full_name if main_lec else None,
-        prac_lecturer_name=prac_lec.full_name if prac_lec else None
+        prac_lecturer_name=prac_lec.full_name if prac_lec else None,
+        start_date=row.start_date,
+        end_date=row.end_date
     )
 
 @router.get("/{session_id}/stats")

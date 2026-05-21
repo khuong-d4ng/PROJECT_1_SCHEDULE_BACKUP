@@ -10,6 +10,7 @@ import { saveAs } from 'file-saver';
 interface RegistrationList {
   list_id: number;
   list_name: string;
+  is_open: boolean;
   created_at: string;
 }
 
@@ -112,7 +113,6 @@ const RegistrationsPage: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeLecturer, setActiveLecturer] = useState<Lecturer | null>(null);
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
   const [form] = Form.useForm();
 
   // States for Smart Import
@@ -126,6 +126,7 @@ const RegistrationsPage: React.FC = () => {
   const [filterProgramIds, setFilterProgramIds] = useState<number[]>([]);
   const [filterSemester, setFilterSemester] = useState<number | null>(null);
   const [filteredSubjectIds, setFilteredSubjectIds] = useState<Set<number> | null>(null);
+  const [listAvailableSubjectIds, setListAvailableSubjectIds] = useState<Set<number> | null>(null);
   const [loadingFilter, setLoadingFilter] = useState(false);
   const [filterPopoverOpen, setFilterPopoverOpen] = useState(false);
 
@@ -136,6 +137,15 @@ const RegistrationsPage: React.FC = () => {
   const [batchEntries, setBatchEntries] = useState<Record<number, number[]>>({});
   const [loadingBatch, setLoadingBatch] = useState(false);
   const [batchFilterLabel, setBatchFilterLabel] = useState<string | null>(null);
+
+  // ---- DRAFT WIZARD MODAL ----
+  const [draftWizardOpen, setDraftWizardOpen] = useState(false);
+  const [draftWizardMode, setDraftWizardMode] = useState<'create' | 'edit_subjects'>('create');
+  const [draftWizardTab, setDraftWizardTab] = useState<'curriculum' | 'manual'>('curriculum');
+  const [subjectModalProgramIds, setSubjectModalProgramIds] = useState<number[]>([]);
+  const [subjectModalEntries, setSubjectModalEntries] = useState<Record<number, number[]>>({});
+  const [subjectModalManualIds, setSubjectModalManualIds] = useState<number[]>([]);
+  const [loadingDraftWizard, setLoadingDraftWizard] = useState(false);
 
   // ---- LECTURER FILTER + SORT ----
   const [lecTypeFilter, setLecTypeFilter] = useState<string | null>(null); // 'Cơ hữu' | 'Thỉnh giảng' | null
@@ -164,29 +174,66 @@ const RegistrationsPage: React.FC = () => {
 
   useEffect(() => { fetchBaseData(); }, []);
 
-  // Load Assignments for active list
+  // Load Assignments and Available Subjects for active list
   useEffect(() => {
     if (selectedListId) {
       apiClient.get(`/registrations/lists/${selectedListId}/detailed`)
         .then(res => setAssignments(res.data))
         .catch(() => message.error("Lỗi lấy danh sách chi tiết"));
+        
+      apiClient.get(`/registrations/lists/${selectedListId}/subjects`)
+        .then(res => setListAvailableSubjectIds(new Set(res.data.map((s: any) => s.subject_id))))
+        .catch(() => setListAvailableSubjectIds(new Set()));
     } else {
       setAssignments([]);
+      setListAvailableSubjectIds(null);
     }
   }, [selectedListId]);
 
-  // Handle Create List
-  const handleCreateList = async (val: any) => {
+  // Handle Draft Wizard Submit
+  const handleDraftSubmit = async () => {
+    setLoadingDraftWizard(true);
     try {
-      // Tạm cắm cứng semester 1 cho bản thử nghiệm
-      const res = await apiClient.post('/registrations/lists', { ...val, semester_id: 1 });
-      setLists([res.data, ...lists]);
-      setSelectedListId(res.data.list_id);
-      setIsModalOpen(false);
+      let listId = selectedListId;
+
+      // 1. Create List if in 'create' mode
+      if (draftWizardMode === 'create') {
+        const values = await form.validateFields();
+        const res = await apiClient.post('/registrations/lists', { ...values, semester_id: 1 });
+        listId = res.data.list_id;
+        setLists([res.data, ...lists]);
+        setSelectedListId(listId);
+      }
+
+      if (!listId) throw new Error("Không xác định được phiên bản");
+
+      // 2. Set Subjects
+      let sids: number[] = [];
+      if (draftWizardTab === 'curriculum') {
+        const selections = subjectModalProgramIds.map(pid => ({
+          program_id: pid,
+          semester_indices: subjectModalEntries[pid] || [1],
+        }));
+        if (selections.length > 0) {
+          const resSubs = await apiClient.post('/registrations/curriculum-subjects', { selections });
+          sids = resSubs.data.map((s: any) => s.subject_id);
+        }
+      } else {
+        sids = subjectModalManualIds;
+      }
+
+      await apiClient.put(`/registrations/lists/${listId}/set-subjects`, { subject_ids: sids });
+      message.success(draftWizardMode === 'create' ? "Tạo phiên bản và gán môn thành công!" : `Đã gán ${sids.length} môn cho đợt đăng ký!`);
+      
+      // Update local state for list subjects immediately
+      setListAvailableSubjectIds(new Set(sids));
+      setDraftWizardOpen(false);
       form.resetFields();
-      message.success("Tạo phiên bản thành công");
-    } catch {
-      message.error("Lỗi tạo danh sách");
+    } catch (err: any) {
+      if (err.errorFields) return; // Validation error
+      message.error("Lỗi xử lý yêu cầu");
+    } finally {
+      setLoadingDraftWizard(false);
     }
   };
 
@@ -428,9 +475,13 @@ const RegistrationsPage: React.FC = () => {
   };
 
   // --- DISPLAY SUBJECTS (filtered) ---
-  const displaySubjects = filteredSubjectIds
-    ? subjects.filter(s => filteredSubjectIds.has(s.subject_id))
-    : subjects;
+  let displaySubjects = subjects;
+  if (listAvailableSubjectIds) {
+    displaySubjects = displaySubjects.filter(s => listAvailableSubjectIds.has(s.subject_id));
+  }
+  if (filteredSubjectIds) {
+    displaySubjects = displaySubjects.filter(s => filteredSubjectIds.has(s.subject_id));
+  }
 
   // --- FILTERED + SORTED LECTURERS ---
   let filteredLecturers = lecturers.filter(l =>
@@ -464,7 +515,7 @@ const RegistrationsPage: React.FC = () => {
             {lists.map(l => (
               <Select.Option key={l.list_id} value={l.list_id} label={l.list_name}>
                 <div className="flex justify-between items-center w-full">
-                  <span>{l.list_name}</span>
+                  <span>{l.list_name} {l.is_open && <Tag color="green" style={{ fontSize: '10px', marginLeft: '6px', lineHeight: '16px', padding: '0 4px' }}>Đang mở</Tag>}</span>
                   <DeleteOutlined 
                     className="text-red-400 hover:text-red-600 ml-2" 
                     onClick={(e) => {
@@ -479,12 +530,20 @@ const RegistrationsPage: React.FC = () => {
           {selectedListId && (
             <Button danger icon={<DeleteOutlined />} onClick={() => handleDeleteList(selectedListId)} title="Xóa Phiên bản đang chọn" />
           )}
-          <Button icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>Tạo Nháp mới</Button>
+          <Button icon={<PlusOutlined />} onClick={() => {
+            setDraftWizardMode('create');
+            setSubjectModalProgramIds([]);
+            setSubjectModalEntries({});
+            setSubjectModalManualIds([]);
+            form.resetFields();
+            setDraftWizardOpen(true);
+          }}>Tạo Nháp mới</Button>
           <Upload beforeUpload={handleUploadExcel} showUploadList={false} accept=".xlsx, .xls">
             <Button icon={<CloudUploadOutlined />} disabled={!selectedListId}>Import Excel</Button>
           </Upload>
+
         </div>
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {/* Export Excel API Call */}
           <Button className="mr-2" onClick={async () => {
             if (!selectedListId) return;
@@ -507,6 +566,32 @@ const RegistrationsPage: React.FC = () => {
           <Button type="primary" icon={<SaveOutlined />} onClick={saveAssignments} disabled={!selectedListId}>
             Lưu Phiên Bản
           </Button>
+          <div style={{ width: '1px', height: '24px', background: '#d1d5db', margin: '0 4px' }} />
+          {/* Toggle Open */}
+          {selectedListId && (() => {
+            const currentList = lists.find(l => l.list_id === selectedListId);
+            const isOpen = currentList?.is_open;
+            return (
+              <Button
+                type={isOpen ? 'default' : 'primary'}
+                danger={isOpen}
+                onClick={async () => {
+                  try {
+                    const res = await apiClient.put(`/registrations/lists/${selectedListId}/toggle-open`);
+                    message.success(res.data.message);
+                    // Refresh lists
+                    const listsRes = await apiClient.get('/registrations/lists');
+                    setLists(listsRes.data);
+                  } catch {
+                    message.error('Lỗi khi thay đổi trạng thái');
+                  }
+                }}
+                style={{ fontWeight: 600, fontSize: '12px' }}
+              >
+                {isOpen ? '🔒 Đóng đăng ký' : '🔓 Mở đăng ký'}
+              </Button>
+            );
+          })()}
         </div>
       </div>
 
@@ -673,16 +758,114 @@ const RegistrationsPage: React.FC = () => {
         </DragOverlay>
       </DndContext>
 
-      {/* Create List Modal */}
-      <Modal title="Tạo Danh Sách Phân Công Mới" open={isModalOpen} onCancel={() => setIsModalOpen(false)} onOk={() => form.submit()}>
-        <Form form={form} layout="vertical" onFinish={handleCreateList}>
-          <Form.Item name="list_name" label="Tên Danh Sách/Phiên bản" rules={[{ required: true, message: 'Vui lòng nhập tên' }]}>
-            <Input placeholder="VD: Phân công lý thuyết Đợt 1" />
-          </Form.Item>
-          <Form.Item name="description" label="Diễn giải thêm">
-            <Input.TextArea />
-          </Form.Item>
-        </Form>
+      {/* DRAFT WIZARD MODAL */}
+      <Modal 
+        title={draftWizardMode === 'create' ? "Tạo Phiên bản Phân công & Chọn môn" : "Quản lý môn học cho đợt đăng ký"}
+        open={draftWizardOpen} 
+        onCancel={() => setDraftWizardOpen(false)}
+        width={700}
+        footer={[
+          <Button key="cancel" onClick={() => setDraftWizardOpen(false)}>Hủy</Button>,
+          <Button key="submit" type="primary" loading={loadingDraftWizard} onClick={handleDraftSubmit}>
+            {draftWizardMode === 'create' ? "Tạo và Lưu môn" : "Lưu danh sách môn"}
+          </Button>
+        ]}
+      >
+        {draftWizardMode === 'create' && (
+          <Form form={form} layout="vertical" style={{ marginBottom: '24px' }}>
+            <Form.Item name="list_name" label="Tên phiên bản" rules={[{ required: true, message: 'Vui lòng nhập tên phiên bản' }]}>
+              <Input placeholder="VD: Phân công Học kỳ 1 2024-2025" />
+            </Form.Item>
+            <Form.Item name="description" label="Ghi chú">
+              <Input.TextArea rows={2} placeholder="Mô tả..." />
+            </Form.Item>
+          </Form>
+        )}
+
+        <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '12px' }}>Cấu hình Môn học cho đợt này</div>
+        {/* Tab switcher */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+          <Button
+            type={draftWizardTab === 'curriculum' ? 'primary' : 'default'}
+            onClick={() => setDraftWizardTab('curriculum')}
+            style={{ fontWeight: 600 }}
+          >
+            Chọn từ Khung CT
+          </Button>
+          <Button
+            type={draftWizardTab === 'manual' ? 'primary' : 'default'}
+            onClick={() => setDraftWizardTab('manual')}
+            style={{ fontWeight: 600 }}
+          >
+            Chọn thủ công
+          </Button>
+        </div>
+
+        {draftWizardTab === 'curriculum' ? (
+          <div>
+            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
+              Chọn khung chương trình → chọn kì → hệ thống tự lấy danh sách môn.
+            </p>
+            <Select
+              mode="multiple"
+              placeholder="Chọn khung chương trình"
+              style={{ width: '100%', marginBottom: '12px' }}
+              value={subjectModalProgramIds}
+              onChange={(val) => {
+                setSubjectModalProgramIds(val);
+                const newEntries = { ...subjectModalEntries };
+                for (const pid of val) {
+                  if (!newEntries[pid]) newEntries[pid] = [1];
+                }
+                for (const key of Object.keys(newEntries)) {
+                  if (!val.includes(Number(key))) delete newEntries[Number(key)];
+                }
+                setSubjectModalEntries(newEntries);
+              }}
+              options={programs.map((p: any) => ({ label: `${p.name} (K${p.batch})`, value: p.id }))}
+            />
+            {subjectModalProgramIds.map(pid => {
+              const prog = programs.find((p: any) => p.id === pid);
+              return (
+                <Card key={pid} size="small" title={<span style={{ color: 'var(--color-accent)', fontWeight: 600 }}>Chương trình: {prog?.name} (K{prog?.batch})</span>} style={{ marginBottom: '8px' }}>
+                  <Select
+                    mode="multiple"
+                    placeholder="Chọn các kì"
+                    style={{ width: '100%' }}
+                    value={subjectModalEntries[pid] || []}
+                    onChange={(val) => setSubjectModalEntries(prev => ({ ...prev, [pid]: val }))}
+                    options={[1,2,3,4,5,6,7,8].map(n => ({ label: `Học Kì ${n}`, value: n }))}
+                  />
+                </Card>
+              );
+            })}
+          </div>
+        ) : (
+          <div>
+            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
+              Chọn các môn thủ công từ danh sách môn trong hệ thống.
+            </p>
+            <Select
+              mode="multiple"
+              placeholder="Tìm và chọn môn học..."
+              style={{ width: '100%', marginBottom: '12px' }}
+              value={subjectModalManualIds}
+              onChange={setSubjectModalManualIds}
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label?.toString() || '').toLowerCase().includes(input.toLowerCase())
+              }
+              options={subjects.map(s => ({
+                label: `${s.subject_code} - ${s.subject_name}`,
+                value: s.subject_id,
+              }))}
+              maxTagCount={8}
+            />
+            <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '12px' }}>
+              Đã chọn: <strong>{subjectModalManualIds.length}</strong> môn
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* Modal Kiểm duyệt Dữ liệu Mới */}
@@ -806,6 +989,8 @@ const RegistrationsPage: React.FC = () => {
           </div>
         )}
       </Modal>
+
+
 
     </div>
   );

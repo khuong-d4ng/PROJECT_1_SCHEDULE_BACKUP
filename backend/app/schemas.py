@@ -146,6 +146,7 @@ class RegistrationListCreate(RegistrationListBase):
 
 class RegistrationListResponse(RegistrationListBase):
     list_id: int
+    is_open: bool = False
     created_at: date
 
     class Config:
@@ -186,6 +187,7 @@ class SessionEntryConfig(BaseModel):
 class TimetableSessionCreate(BaseModel):
     plan_name: str
     registration_list_id: Optional[int] = None
+    description: Optional[str] = None
     entries: List[SessionEntryConfig]
 
 class TimetableSessionResponse(BaseModel):
@@ -194,9 +196,19 @@ class TimetableSessionResponse(BaseModel):
     registration_list_id: Optional[int]
     status: str
     created_at: date
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    description: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+class SessionDateUpdate(BaseModel):
+    start_date: date
+
+class SessionInfoUpdate(BaseModel):
+    plan_name: Optional[str] = None
+    description: Optional[str] = None
 
 class TimetableRowResponse(BaseModel):
     row_id: int
@@ -215,6 +227,8 @@ class TimetableRowResponse(BaseModel):
     prac_lecturer_id: Optional[int]
     main_lecturer_name: Optional[str]
     prac_lecturer_name: Optional[str]
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
     class Config:
         from_attributes = True
@@ -226,6 +240,8 @@ class TimetableRowUpdate(BaseModel):
     afternoon_day: Optional[str] = None
     main_lecturer_id: Optional[int] = None
     prac_lecturer_id: Optional[int] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
 class AutoAssignResult(BaseModel):
     assigned_count: int
@@ -257,6 +273,8 @@ class LecturerTimetableRowItem(BaseModel):
     morning_day: Optional[str]
     afternoon_day: Optional[str]
     role: str  # "LT" or "TH"
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
 
 class LecturerTimetableSessionItem(BaseModel):
     session_id: int

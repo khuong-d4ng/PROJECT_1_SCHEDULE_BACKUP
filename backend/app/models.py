@@ -100,10 +100,22 @@ class RegistrationList(Base):
     list_name = Column(String(200), nullable=False)
     semester_id = Column(Integer, ForeignKey("semesters.semester_id"), nullable=False)
     description = Column(String(500), nullable=True)
+    is_open = Column(Boolean, default=False)  # Cán bộ mở để GV đăng ký
     created_at = Column(Date, default=datetime.utcnow)
     
     semester = relationship("Semester", back_populates="registration_lists")
     registrations = relationship("LecturerRegistration", back_populates="registration_list", cascade="all, delete-orphan")
+    available_subjects = relationship("RegistrationListSubject", back_populates="registration_list", cascade="all, delete-orphan")
+
+class RegistrationListSubject(Base):
+    """Danh sách môn học khả dụng trong 1 đợt đăng ký"""
+    __tablename__ = "registration_list_subjects"
+    id = Column(Integer, primary_key=True, index=True)
+    list_id = Column(Integer, ForeignKey("registration_lists.list_id", ondelete="CASCADE"), nullable=False)
+    subject_id = Column(Integer, ForeignKey("subjects.subject_id"), nullable=False)
+    
+    registration_list = relationship("RegistrationList", back_populates="available_subjects")
+    subject = relationship("Subject")
 
 class LecturerRegistration(Base):
     __tablename__ = "lecturer_registrations"
@@ -166,12 +178,21 @@ class SchedulingSession(Base):
     __tablename__ = "scheduling_sessions"
     session_id = Column(Integer, primary_key=True, index=True)
     plan_name = Column(String(200), nullable=False)
-    registration_list_id = Column(Integer, ForeignKey("registration_lists.list_id"), nullable=True)
+    registration_list_id = Column(Integer, ForeignKey("registration_lists.list_id", ondelete="SET NULL"), nullable=True)
     created_at = Column(Date, default=datetime.utcnow)
     status = Column(Enum(TimetableSessionStatusEnum), default=TimetableSessionStatusEnum.DRAFT)
+    start_date = Column(Date, nullable=True)
+    description = Column(String(500), nullable=True)
     
     entries = relationship("SessionEntry", back_populates="session", cascade="all, delete-orphan")
     timetable_rows = relationship("TimetableRow", back_populates="session", cascade="all, delete-orphan")
+
+    @property
+    def end_date(self):
+        if not self.timetable_rows:
+            return None
+        dates = [row.end_date for row in self.timetable_rows if row.end_date]
+        return max(dates) if dates else None
 
 class SessionEntry(Base):
     """Cấu hình các block (Ngành, Khóa, Kì) đã chọn để gen TKB"""
@@ -201,6 +222,9 @@ class TimetableRow(Base):
     
     main_lecturer_id = Column(Integer, ForeignKey("lecturers.lecturer_id"), nullable=True)
     prac_lecturer_id = Column(Integer, ForeignKey("lecturers.lecturer_id"), nullable=True)
+
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
 
     session = relationship("SchedulingSession", back_populates="timetable_rows")
     subject = relationship("Subject")
