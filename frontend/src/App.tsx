@@ -1,10 +1,10 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Button, ConfigProvider, Select, Spin, message, Tag, Table } from 'antd';
+import { Button, ConfigProvider, Select, Spin, message, Tag, Table, Popover, Badge } from 'antd';
 import {
   BookOutlined, TeamOutlined, AppstoreOutlined,
   BankOutlined, CalendarOutlined, FormOutlined,
   DashboardOutlined, ThunderboltOutlined,
-  UploadOutlined, LogoutOutlined
+  UploadOutlined, LogoutOutlined, BellOutlined
 } from '@ant-design/icons';
 import { useState, useEffect, useMemo } from 'react';
 import SubjectsPage from './pages/SubjectsPage';
@@ -101,6 +101,12 @@ const DashboardPage = () => {
   const [dashboardSessions, setDashboardSessions] = useState<any[]>([]);
   const [selectedDashboardSession, setSelectedDashboardSession] = useState<number | null>(null);
   const [loadingSchedule, setLoadingSchedule] = useState(false);
+
+  const activeSession = useMemo(() => {
+    return selectedDashboardSession
+      ? dashboardSessions.find(s => s.session_id === selectedDashboardSession)
+      : null;
+  }, [dashboardSessions, selectedDashboardSession]);
 
   // Load basic info
   useEffect(() => {
@@ -517,6 +523,31 @@ const DashboardPage = () => {
                   allowClear
                 />
               </div>
+
+              {activeSession?.description && (
+                <div style={{
+                  background: 'linear-gradient(135deg, #fffaf5, #fff5eb)',
+                  border: '1px solid #ffe3c9',
+                  borderRadius: '12px',
+                  padding: '14px 18px',
+                  marginBottom: '16px',
+                  boxShadow: '0 2px 6px rgba(243, 116, 35, 0.05)',
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: '12px'
+                }}>
+                  <span style={{ fontSize: '20px', lineHeight: 1 }}>📢</span>
+                  <div>
+                    <div style={{ fontWeight: 600, color: '#c2410c', fontSize: '13.5px', marginBottom: '2px' }}>
+                      Thông báo/Lưu ý đợt TKB ({activeSession.plan_name})
+                    </div>
+                    <div style={{ color: '#4b5563', fontSize: '13px', lineHeight: '1.5' }}>
+                      {activeSession.description}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {renderLecturerWeeklyGrid(busySlotsList)}
             </div>
           </div>
@@ -694,6 +725,175 @@ function App() {
     return stored ? JSON.parse(stored) : null;
   });
 
+  interface Notification {
+    notification_id: number;
+    title: string;
+    content: string;
+    link?: string;
+    is_read: boolean;
+    created_at: string;
+  }
+
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setNotifications([]);
+      return;
+    }
+
+    const fetchNotifications = async () => {
+      try {
+        const response = await apiClient.get<Notification[]>('/notifications/');
+        setNotifications(response.data);
+      } catch (error) {
+        console.error('Lỗi khi tải thông báo:', error);
+      }
+    };
+
+    fetchNotifications();
+
+    // Thiết lập interval thăm dò (polling) mỗi 30 giây
+    const interval = setInterval(fetchNotifications, 30000);
+
+    return () => clearInterval(interval);
+  }, [currentUser]);
+
+  const handleMarkAsRead = async (notificationId: number) => {
+    try {
+      await apiClient.put(`/notifications/${notificationId}/read`);
+      setNotifications(prev =>
+        prev.map(noti =>
+          noti.notification_id === notificationId ? { ...noti, is_read: true } : noti
+        )
+      );
+    } catch (error) {
+      console.error('Lỗi khi đánh dấu đã đọc:', error);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await apiClient.put('/notifications/read-all');
+      setNotifications(prev => prev.map(noti => ({ ...noti, is_read: true })));
+      message.success('Đã đánh dấu tất cả thông báo là đã đọc');
+    } catch (error) {
+      console.error('Lỗi khi đánh dấu tất cả đã đọc:', error);
+      message.error('Không thể đánh dấu tất cả đã đọc');
+    }
+  };
+
+  const unreadCount = useMemo(() => notifications.filter(n => !n.is_read).length, [notifications]);
+
+  const notificationContent = (
+    <div style={{ width: '320px' }}>
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingBottom: '8px',
+        borderBottom: '1px solid var(--color-border)',
+        marginBottom: '8px'
+      }}>
+        <span style={{ fontWeight: 600, fontSize: '14px' }}>Thông báo ({unreadCount})</span>
+        {unreadCount > 0 && (
+          <Button
+            type="link"
+            size="small"
+            onClick={handleMarkAllAsRead}
+            style={{ padding: 0, fontSize: '12px' }}
+          >
+            Đọc tất cả
+          </Button>
+        )}
+      </div>
+      <div style={{ maxHeight: '300px', overflowY: 'auto', margin: '0 -12px', padding: '0 12px' }}>
+        {notifications.length === 0 ? (
+          <div style={{ padding: '24px 0', textAlign: 'center', color: 'var(--color-text-muted)' }}>
+            Không có thông báo nào
+          </div>
+        ) : (
+          notifications.map(noti => (
+            <div
+              key={noti.notification_id}
+              onClick={() => handleMarkAsRead(noti.notification_id)}
+              style={{
+                padding: '10px 12px',
+                borderRadius: '6px',
+                cursor: 'pointer',
+                backgroundColor: noti.is_read ? 'transparent' : 'rgba(243, 116, 35, 0.06)',
+                borderBottom: '1px solid #f0f0f0',
+                transition: 'background 0.2s',
+                position: 'relative'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = noti.is_read ? '#f9f9f9' : 'rgba(243, 116, 35, 0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = noti.is_read ? 'transparent' : 'rgba(243, 116, 35, 0.06)';
+              }}
+            >
+              {noti.link ? (
+                <Link
+                  to={noti.link}
+                  style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                    <div style={{ fontWeight: noti.is_read ? 500 : 600, fontSize: '13px', color: 'var(--color-text)' }}>
+                      {noti.title}
+                    </div>
+                    {!noti.is_read && (
+                      <span style={{
+                        display: 'inline-block',
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: '#f37423',
+                        marginTop: '4px',
+                        flexShrink: 0
+                      }} />
+                    )}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                    {noti.content}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+                    {dayjs(noti.created_at).format('DD/MM/YYYY HH:mm')}
+                  </div>
+                </Link>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                    <div style={{ fontWeight: noti.is_read ? 500 : 600, fontSize: '13px', color: 'var(--color-text)' }}>
+                      {noti.title}
+                    </div>
+                    {!noti.is_read && (
+                      <span style={{
+                        display: 'inline-block',
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: '#f37423',
+                        marginTop: '4px',
+                        flexShrink: 0
+                      }} />
+                    )}
+                  </div>
+                  <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: 1.4 }}>
+                    {noti.content}
+                  </div>
+                  <div style={{ fontSize: '10px', color: 'var(--color-text-muted)', marginTop: '6px' }}>
+                    {dayjs(noti.created_at).format('DD/MM/YYYY HH:mm')}
+                  </div>
+                </>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
   const handleLoginSuccess = (_token: string, user: any) => {
     setCurrentUser(user);
   };
@@ -753,6 +953,31 @@ function App() {
                 <span style={{ fontSize: '13px', opacity: 0.95, fontWeight: 500 }}>
                   {currentUser.full_name || currentUser.username}
                 </span>
+
+                <Popover
+                  content={notificationContent}
+                  title={null}
+                  trigger="click"
+                  placement="bottomRight"
+                  overlayStyle={{ zIndex: 1050 }}
+                >
+                  <Badge count={unreadCount} size="small" offset={[2, -2]}>
+                    <Button
+                      type="text"
+                      shape="circle"
+                      icon={<BellOutlined style={{ fontSize: '16px', color: 'white' }} />}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: 'rgba(255,255,255,0.15)',
+                        borderColor: 'transparent',
+                        cursor: 'pointer',
+                      }}
+                    />
+                  </Badge>
+                </Popover>
+
                 <Button
                   size="small"
                   icon={<LogoutOutlined />}

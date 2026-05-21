@@ -280,6 +280,7 @@ class LecturerTimetableSessionItem(BaseModel):
     session_id: int
     plan_name: str
     status: str
+    description: Optional[str] = None
 
 class LecturerTimetableSummary(BaseModel):
     total_classes: int
@@ -291,3 +292,23 @@ class LecturerTimetableInfoResponse(BaseModel):
     sessions: List[LecturerTimetableSessionItem]
     rows: List[LecturerTimetableRowItem]
     summary: LecturerTimetableSummary
+
+# --- Notification Schemas ---
+from datetime import datetime
+
+class NotificationBase(BaseModel):
+    title: str
+    content: str
+    link: Optional[str] = None
+
+class NotificationCreate(NotificationBase):
+    user_id: int
+
+class NotificationResponse(NotificationBase):
+    notification_id: int
+    user_id: int
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

@@ -143,6 +143,7 @@ def register_subjects(
             lecturer_id=lecturer_id,
             subject_id=item.subject_id,
             is_main_lecturer=item.is_main_lecturer,
+            created_by_lecturer=True,
         ))
     
     db.commit()

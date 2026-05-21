@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { Select, Button, Modal, message, Upload, Input, Form, Table, Tag, Tooltip, Popover, Card, Row, Col } from 'antd';
-import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined, FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, AppstoreAddOutlined } from '@ant-design/icons';
+import { CloudUploadOutlined, PlusOutlined, SaveOutlined, CloseOutlined, DeleteOutlined, FilterOutlined, SortAscendingOutlined, SortDescendingOutlined, AppstoreAddOutlined, EyeOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 import { DndContext, DragOverlay, useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import { saveAs } from 'file-saver';
+import dayjs from 'dayjs';
 
 // --- BẢN MODEL VÀ KIỂU DỮ LIỆU ---
 interface RegistrationList {
@@ -12,6 +13,7 @@ interface RegistrationList {
   list_name: string;
   is_open: boolean;
   created_at: string;
+  description?: string;
 }
 
 interface Lecturer {
@@ -87,12 +89,38 @@ const DroppableSubjectArea = ({ type, subject, assignments, removeAssignment }: 
         {type === 'main' ? 'Giảng viên Lý thuyết' : 'Giảng viên Thực hành'}
       </div>
       <div className="flex flex-wrap gap-2">
-        {assignments.map((asst: any, idx: number) => (
-          <div key={idx} style={{ display: 'flex', alignItems: 'center', fontSize: '12px', padding: '3px 8px', borderRadius: 'var(--radius-sm)', border: `1px solid ${type === 'main' ? '#e0e7ff' : 'var(--color-border)'}`, background: type === 'main' ? '#eef2ff' : 'var(--color-bg)', color: type === 'main' ? 'var(--color-accent)' : 'var(--color-text)' }}>
-            <span>{asst.lecturer_name}</span>
-            <CloseOutlined className="ml-2 cursor-pointer hover:text-red-500" onClick={() => removeAssignment(subject.subject_id, asst.lecturer_id, type === 'main')} />
-          </div>
-        ))}
+        {assignments.map((asst: any, idx: number) => {
+          const isSelfReg = !!asst.created_by_lecturer;
+          
+          let border = type === 'main' ? '#e0e7ff' : 'var(--color-border)';
+          let background = type === 'main' ? '#eef2ff' : 'var(--color-bg)';
+          let color = type === 'main' ? 'var(--color-accent)' : 'var(--color-text)';
+
+          if (isSelfReg) {
+            border = '#22c55e';     // Green border (emerald-500)
+            background = '#f0fdf4'; // Light green background (emerald-50)
+            color = '#15803d';      // Green text (emerald-700)
+          }
+
+          return (
+            <div 
+              key={idx} 
+              style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                fontSize: '12px', 
+                padding: '3px 8px', 
+                borderRadius: 'var(--radius-sm)', 
+                border: `1px solid ${border}`, 
+                background, 
+                color 
+              }}
+            >
+              <span>{asst.lecturer_name}</span>
+              <CloseOutlined className="ml-2 cursor-pointer hover:text-red-500" onClick={() => removeAssignment(subject.subject_id, asst.lecturer_id, type === 'main')} />
+            </div>
+          );
+        })}
         {assignments.length === 0 && <span className="text-slate-400 text-xs italic">Kéo thả GV vào đây</span>}
       </div>
     </div>
@@ -164,9 +192,6 @@ const RegistrationsPage: React.FC = () => {
       setLecturers(resLecs.data);
       setSubjects(resSubs.data);
       setPrograms(resProgs.data);
-      if (resLists.data.length > 0 && !selectedListId) {
-        setSelectedListId(resLists.data[0].list_id);
-      }
     } catch {
       message.error("Lỗi tải dữ liệu nền");
     }
@@ -302,7 +327,8 @@ const RegistrationsPage: React.FC = () => {
                  lecturer_name: lecInfo.name,
                  lecturer_code: d.lecturer_code,
                  subject_id: subId,
-                 is_main_lecturer: d.is_main_lecturer
+                 is_main_lecturer: d.is_main_lecturer,
+                 created_by_lecturer: false
               });
           }
       }
@@ -360,7 +386,8 @@ const RegistrationsPage: React.FC = () => {
         lecturer_name: lecInfo.full_name,
         lecturer_code: lecInfo.lecturer_code,
         subject_id: dropSubjId,
-        is_main_lecturer: isMain
+        is_main_lecturer: isMain,
+        created_by_lecturer: false
       }]);
     }
   };
@@ -376,7 +403,14 @@ const RegistrationsPage: React.FC = () => {
   const saveAssignments = async () => {
     if (!selectedListId) return;
     try {
-      const payload = { assignments: assignments.map(a => ({ lecturer_id: a.lecturer_id, subject_id: a.subject_id, is_main_lecturer: a.is_main_lecturer })) };
+      const payload = {
+        assignments: assignments.map(a => ({
+          lecturer_id: a.lecturer_id,
+          subject_id: a.subject_id,
+          is_main_lecturer: a.is_main_lecturer,
+          created_by_lecturer: !!a.created_by_lecturer
+        }))
+      };
       const res = await apiClient.post(`/registrations/lists/${selectedListId}/save`, payload);
       message.success(res.data.message);
     } catch (e: any) {
@@ -501,262 +535,349 @@ const RegistrationsPage: React.FC = () => {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 76px)', overflow: 'hidden' }}>
-      {/* TOOLBAR */}
-      <div style={{ background: 'var(--color-white)', padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <span style={{ fontWeight: 600, fontSize: '13px', color: 'var(--color-text-secondary)' }}>Phiên bản:</span>
-          <Select 
-            className="w-64" 
-            value={selectedListId} 
-            onChange={setSelectedListId}
-            placeholder="-- Chọn danh sách --"
-            optionLabelProp="label"
-          >
-            {lists.map(l => (
-              <Select.Option key={l.list_id} value={l.list_id} label={l.list_name}>
-                <div className="flex justify-between items-center w-full">
-                  <span>{l.list_name} {l.is_open && <Tag color="green" style={{ fontSize: '10px', marginLeft: '6px', lineHeight: '16px', padding: '0 4px' }}>Đang mở</Tag>}</span>
-                  <DeleteOutlined 
-                    className="text-red-400 hover:text-red-600 ml-2" 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteList(l.list_id);
-                    }} 
-                  />
-                </div>
-              </Select.Option>
-            ))}
-          </Select>
-          {selectedListId && (
-            <Button danger icon={<DeleteOutlined />} onClick={() => handleDeleteList(selectedListId)} title="Xóa Phiên bản đang chọn" />
-          )}
-          <Button icon={<PlusOutlined />} onClick={() => {
-            setDraftWizardMode('create');
-            setSubjectModalProgramIds([]);
-            setSubjectModalEntries({});
-            setSubjectModalManualIds([]);
-            form.resetFields();
-            setDraftWizardOpen(true);
-          }}>Tạo Nháp mới</Button>
-          <Upload beforeUpload={handleUploadExcel} showUploadList={false} accept=".xlsx, .xls">
-            <Button icon={<CloudUploadOutlined />} disabled={!selectedListId}>Import Excel</Button>
-          </Upload>
-
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* Export Excel API Call */}
-          <Button className="mr-2" onClick={async () => {
-            if (!selectedListId) return;
-            try {
-              const res = await apiClient.get(`/registrations/lists/${selectedListId}/export`, {
-                responseType: 'blob'
-              });
-              const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-              // Lấy tên Phiên bản làm tên file
-              const currentList = lists.find(l => l.list_id === selectedListId);
-              const fileName = currentList ? `${currentList.list_name}.xlsx` : `PhanCong_Dot_${selectedListId}.xlsx`;
-              saveAs(blob, fileName);
-              message.success('Đã tải file Excel thành công!');
-            } catch {
-              message.error('Lỗi khi xuất file Excel');
-            }
-          }} disabled={!selectedListId}>
-            Export Excel
-          </Button>
-          <Button type="primary" icon={<SaveOutlined />} onClick={saveAssignments} disabled={!selectedListId}>
-            Lưu Phiên Bản
-          </Button>
-          <div style={{ width: '1px', height: '24px', background: '#d1d5db', margin: '0 4px' }} />
-          {/* Toggle Open */}
-          {selectedListId && (() => {
-            const currentList = lists.find(l => l.list_id === selectedListId);
-            const isOpen = currentList?.is_open;
-            return (
-              <Button
-                type={isOpen ? 'default' : 'primary'}
-                danger={isOpen}
-                onClick={async () => {
-                  try {
-                    const res = await apiClient.put(`/registrations/lists/${selectedListId}/toggle-open`);
-                    message.success(res.data.message);
-                    // Refresh lists
-                    const listsRes = await apiClient.get('/registrations/lists');
-                    setLists(listsRes.data);
-                  } catch {
-                    message.error('Lỗi khi thay đổi trạng thái');
-                  }
-                }}
-                style={{ fontWeight: 600, fontSize: '12px' }}
-              >
-                {isOpen ? '🔒 Đóng đăng ký' : '🔓 Mở đăng ký'}
-              </Button>
-            );
-          })()}
-        </div>
-      </div>
-
-      {/* DND WORKSPACE */}
-      <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: '16px', gap: '16px' }}>
-          
-          {/* LEFT COLUMN: SUBJECTS */}
-          <div style={{ flex: 1, background: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Danh sách Môn Học</h3>
-                <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>({displaySubjects.length} môn)</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                {filteredSubjectIds && (
-                  <Tag color="orange" closable onClose={clearCurriculumFilter} style={{ margin: 0, fontSize: '11px' }}>
-                    {batchFilterLabel ? `Đợt: ${filteredSubjectIds.size} môn` : `Lọc: ${filteredSubjectIds.size} môn`}
-                  </Tag>
-                )}
-                <Tooltip title="Tạo đợt môn học (chọn kì riêng cho từng khung)">
-                  <Button size="small" icon={<AppstoreAddOutlined />} onClick={() => setBatchModalOpen(true)}>Tạo đợt</Button>
-                </Tooltip>
-                <Popover
-                  title={<span style={{ fontWeight: 600 }}>Lọc môn theo Đợt học</span>}
-                  trigger="click"
-                  open={filterPopoverOpen}
-                  onOpenChange={setFilterPopoverOpen}
-                  placement="bottomRight"
-                  content={
-                    <div style={{ width: '320px' }}>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Khung chương trình:</label>
-                        <Select
-                          mode="multiple"
-                          style={{ width: '100%' }}
-                          placeholder="Chọn khung chương trình…"
-                          value={filterProgramIds}
-                          onChange={setFilterProgramIds}
-                          options={programs.map(p => ({ label: `${p.name} (K${p.batch})`, value: p.id }))}
-                          maxTagCount={2}
-                        />
-                      </div>
-                      <div style={{ marginBottom: '12px' }}>
-                        <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Học kì:</label>
-                        <Select
-                          style={{ width: '100%' }}
-                          placeholder="Chọn học kì…"
-                          value={filterSemester}
-                          onChange={setFilterSemester}
-                          options={[1,2,3,4,5,6,7,8].map(n => ({ label: `Học kì ${n}`, value: n }))}
-                        />
-                      </div>
-                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                        <Button size="small" onClick={() => { clearCurriculumFilter(); setFilterPopoverOpen(false); }}>Xóa lọc</Button>
-                        <Button size="small" type="primary" onClick={applyCurriculumFilter} loading={loadingFilter}>Áp dụng</Button>
-                      </div>
-                    </div>
-                  }
-                >
-                  <Tooltip title="Lọc môn theo đợt học">
-                    <Button size="small" icon={<FilterOutlined />} type={filteredSubjectIds ? 'primary' : 'default'} />
-                  </Tooltip>
-                </Popover>
-              </div>
+      {!selectedListId ? (
+        /* --- DASHBOARD VIEW (CARDS) --- */
+        <div style={{ padding: '24px', overflowY: 'auto', flex: 1 }} className="custom-scrollbar">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+            <div>
+              <h2 style={{ fontSize: '20px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>
+                Đăng ký Nguyện vọng Giảng dạy
+              </h2>
+              <p style={{ color: 'var(--color-text-secondary)', fontSize: '13.5px', margin: '4px 0 0 0' }}>
+                Chọn một phiên bản để rải môn/giảng viên hoặc tạo một phiên bản nháp mới.
+              </p>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }} className="custom-scrollbar">
-            {!selectedListId && <div className="text-red-500 italic">Vui lòng chọn/tạo 1 phiên bản trước khi rải môn.</div>}
-            {selectedListId && displaySubjects.length === 0 && filteredSubjectIds && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-muted)' }}>
-                <FilterOutlined style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.4 }} />
-                <div>Không có môn nào phù hợp với bộ lọc đã chọn.</div>
-                <Button size="small" type="link" onClick={clearCurriculumFilter}>Xóa bộ lọc</Button>
-              </div>
-            )}
-            {selectedListId && displaySubjects.map(subj => (
-              <div key={subj.subject_id} className="mb-4 border border-slate-200 rounded-lg">
-                <div style={{ background: 'var(--color-bg)', padding: '8px 12px', borderBottom: '1px solid var(--color-border-light)', fontWeight: 600, color: 'var(--color-accent)', borderRadius: 'var(--radius-md) var(--radius-md) 0 0', fontSize: '13px' }}>
-                  {subj.subject_code} - {subj.subject_name}
-                </div>
-                <div className="p-3 grid grid-cols-2 gap-4">
-                  <DroppableSubjectArea 
-                    type="main" 
-                    subject={subj} 
-                    assignments={assignments.filter(a => a.subject_id === subj.subject_id && a.is_main_lecturer)} 
-                    removeAssignment={removeAssignment}
-                  />
-                  <DroppableSubjectArea 
-                    type="prac" 
-                    subject={subj} 
-                    assignments={assignments.filter(a => a.subject_id === subj.subject_id && !a.is_main_lecturer)} 
-                    removeAssignment={removeAssignment}
-                  />
-                </div>
-              </div>
-            ))}
-            </div>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+              setDraftWizardMode('create');
+              setSubjectModalProgramIds([]);
+              setSubjectModalEntries({});
+              setSubjectModalManualIds([]);
+              form.resetFields();
+              setDraftWizardOpen(true);
+            }}>Tạo Nháp mới</Button>
           </div>
 
-          {/* RIGHT COLUMN: LECTURER POOL */}
-          <div style={{ width: '300px', background: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', flexShrink: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Pool Giảng Viên</h3>
-                <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{filteredLecturers.length}/{lecturers.length}</span>
-              </div>
-              <Input.Search
-                placeholder="Tìm tên hoặc mã GV…"
-                size="small"
-                allowClear
-                onChange={(e) => setSearchTerm(e.target.value)}
-                style={{ marginBottom: '8px' }}
-              />
-              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                <Tag.CheckableTag
-                  checked={lecTypeFilter === null}
-                  onChange={() => setLecTypeFilter(null)}
-                  style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
-                >
-                  Tất cả
-                </Tag.CheckableTag>
-                <Tag.CheckableTag
-                  checked={lecTypeFilter === 'Cơ hữu'}
-                  onChange={(checked) => setLecTypeFilter(checked ? 'Cơ hữu' : null)}
-                  style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
-                >
-                  Cơ hữu
-                </Tag.CheckableTag>
-                <Tag.CheckableTag
-                  checked={lecTypeFilter === 'Thỉnh giảng'}
-                  onChange={(checked) => setLecTypeFilter(checked ? 'Thỉnh giảng' : null)}
-                  style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
-                >
-                  Thỉnh giảng
-                </Tag.CheckableTag>
-                <div style={{ marginLeft: 'auto' }}>
-                  <Tooltip title={lecSortOrder === 'asc' ? 'Đang: Ít → Nhiều. Bấm đổi' : lecSortOrder === 'desc' ? 'Đang: Nhiều → Ít. Bấm tắt' : 'Sắp xếp theo số môn'}>
-                    <Button
-                      size="small"
-                      type={lecSortOrder ? 'primary' : 'default'}
-                      icon={lecSortOrder === 'desc' ? <SortDescendingOutlined /> : <SortAscendingOutlined />}
-                      onClick={() => {
-                        if (!lecSortOrder) setLecSortOrder('asc');
-                        else if (lecSortOrder === 'asc') setLecSortOrder('desc');
-                        else setLecSortOrder(null);
-                      }}
-                      style={{ padding: '0 6px' }}
+          {lists.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '60px 0', color: 'var(--color-text-muted)', fontSize: '14px', fontStyle: 'italic' }}>
+              Chưa có phiên bản phân công nào. Vui lòng bấm "Tạo Nháp mới".
+            </div>
+          ) : (
+            <Row gutter={[16, 16]}>
+              {lists.map((l) => (
+                <Col xs={24} sm={12} md={8} key={l.list_id}>
+                  <Card
+                    hoverable
+                    className="h-full"
+                    style={{
+                      borderRadius: 'var(--radius-lg)',
+                      borderTop: '3px solid var(--color-primary)',
+                      boxShadow: 'var(--shadow-sm)'
+                    }}
+                    onClick={() => setSelectedListId(l.list_id)}
+                    actions={[
+                      <Button type="link" icon={<EyeOutlined />} onClick={(e) => { e.stopPropagation(); setSelectedListId(l.list_id); }}>
+                        Chi tiết
+                      </Button>,
+                      <Button
+                        type="link"
+                        danger={l.is_open}
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          try {
+                            const res = await apiClient.put(`/registrations/lists/${l.list_id}/toggle-open`);
+                            message.success(res.data.message);
+                            // Refresh lists
+                            const listsRes = await apiClient.get('/registrations/lists');
+                            setLists(listsRes.data);
+                          } catch {
+                            message.error('Lỗi khi thay đổi trạng thái');
+                          }
+                        }}
+                        style={{ fontWeight: 500 }}
+                      >
+                        {l.is_open ? '🔒 Đóng' : '🔓 Mở'}
+                      </Button>,
+                      <Button type="link" danger icon={<DeleteOutlined />} onClick={(e) => { e.stopPropagation(); handleDeleteList(l.list_id); }}>
+                        Xóa
+                      </Button>
+                    ]}
+                  >
+                    <Card.Meta
+                      title={
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px' }}>
+                          <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }} className="truncate">
+                            {l.list_name}
+                          </span>
+                          <Tag color={l.is_open ? 'green' : 'default'} style={{ margin: 0, fontSize: '10px' }}>
+                            {l.is_open ? 'Đang mở' : 'Đã đóng'}
+                          </Tag>
+                        </div>
+                      }
+                      description={
+                        <div className="mt-2 space-y-2 text-xs">
+                          {l.description ? (
+                            <p style={{ color: 'var(--color-text-secondary)', marginBottom: '8px', minHeight: '32px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                              {l.description}
+                            </p>
+                          ) : (
+                            <p style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', marginBottom: '8px', minHeight: '32px' }}>
+                              Không có ghi chú
+                            </p>
+                          )}
+                          <div style={{ color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px', borderTop: '1px dashed var(--color-border-light)', paddingTop: '8px' }}>
+                            <span>Ngày tạo: {dayjs(l.created_at).format('DD/MM/YYYY')}</span>
+                          </div>
+                        </div>
+                      }
                     />
-                  </Tooltip>
+                  </Card>
+                </Col>
+              ))}
+            </Row>
+          )}
+        </div>
+      ) : (
+        /* --- DETAILED WORKSPACE VIEW (DND) --- */
+        <>
+          {/* TOOLBAR */}
+          <div style={{ background: 'var(--color-white)', padding: '12px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Button size="small" onClick={() => setSelectedListId(null)}>← Quay lại</Button>
+              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }}>
+                    {lists.find(l => l.list_id === selectedListId)?.list_name}
+                  </span>
+                  {(() => {
+                    const currentList = lists.find(l => l.list_id === selectedListId);
+                    return currentList?.is_open ? <Tag color="green" style={{ margin: 0 }}>Đang mở</Tag> : <Tag color="default" style={{ margin: 0 }}>Đã đóng</Tag>;
+                  })()}
+                </div>
+                {lists.find(l => l.list_id === selectedListId)?.description && (
+                  <span style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                    Ghi chú: {lists.find(l => l.list_id === selectedListId)?.description}
+                  </span>
+                )}
+              </div>
+              <Upload beforeUpload={handleUploadExcel} showUploadList={false} accept=".xlsx, .xls">
+                <Button size="small" icon={<CloudUploadOutlined />} disabled={!selectedListId}>Import Excel</Button>
+              </Upload>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Button size="small" onClick={async () => {
+                if (!selectedListId) return;
+                try {
+                  const res = await apiClient.get(`/registrations/lists/${selectedListId}/export`, {
+                    responseType: 'blob'
+                  });
+                  const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                  const currentList = lists.find(l => l.list_id === selectedListId);
+                  const fileName = currentList ? `${currentList.list_name}.xlsx` : `PhanCong_Dot_${selectedListId}.xlsx`;
+                  saveAs(blob, fileName);
+                  message.success('Đã tải file Excel thành công!');
+                } catch {
+                  message.error('Lỗi khi xuất file Excel');
+                }
+              }} disabled={!selectedListId}>
+                Export Excel
+              </Button>
+              <Button size="small" type="primary" icon={<SaveOutlined />} onClick={saveAssignments} disabled={!selectedListId}>
+                Lưu Phiên Bản
+              </Button>
+              <div style={{ width: '1px', height: '20px', background: '#d1d5db', margin: '0 4px' }} />
+              {(() => {
+                const currentList = lists.find(l => l.list_id === selectedListId);
+                const isOpen = currentList?.is_open;
+                return (
+                  <Button
+                    size="small"
+                    type={isOpen ? 'default' : 'primary'}
+                    danger={isOpen}
+                    onClick={async () => {
+                      try {
+                        const res = await apiClient.put(`/registrations/lists/${selectedListId}/toggle-open`);
+                        message.success(res.data.message);
+                        const listsRes = await apiClient.get('/registrations/lists');
+                        setLists(listsRes.data);
+                      } catch {
+                        message.error('Lỗi khi thay đổi trạng thái');
+                      }
+                    }}
+                    style={{ fontWeight: 600, fontSize: '11px' }}
+                  >
+                    {isOpen ? '🔒 Đóng đăng ký' : '🔓 Mở đăng ký'}
+                  </Button>
+                );
+              })()}
+              <Button size="small" danger icon={<DeleteOutlined />} onClick={() => handleDeleteList(selectedListId!)} />
+            </div>
+          </div>
+
+          {/* DND WORKSPACE */}
+          <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+            <div style={{ display: 'flex', flex: 1, overflow: 'hidden', padding: '16px', gap: '16px' }}>
+              
+              {/* LEFT COLUMN: SUBJECTS */}
+              <div style={{ flex: 1, background: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Danh sách Môn Học</h3>
+                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>({displaySubjects.length} môn)</span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    {filteredSubjectIds && (
+                      <Tag color="orange" closable onClose={clearCurriculumFilter} style={{ margin: 0, fontSize: '11px' }}>
+                        {batchFilterLabel ? `Đợt: ${filteredSubjectIds.size} môn` : `Lọc: ${filteredSubjectIds.size} môn`}
+                      </Tag>
+                    )}
+                    <Tooltip title="Tạo đợt môn học (chọn kì riêng cho từng khung)">
+                      <Button size="small" icon={<AppstoreAddOutlined />} onClick={() => setBatchModalOpen(true)}>Tạo đợt</Button>
+                    </Tooltip>
+                    <Popover
+                      title={<span style={{ fontWeight: 600 }}>Lọc môn theo Đợt học</span>}
+                      trigger="click"
+                      open={filterPopoverOpen}
+                      onOpenChange={setFilterPopoverOpen}
+                      placement="bottomRight"
+                      content={
+                        <div style={{ width: '320px' }}>
+                          <div style={{ marginBottom: '12px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Khung chương trình:</label>
+                            <Select
+                              mode="multiple"
+                              style={{ width: '100%' }}
+                              placeholder="Chọn khung chương trình…"
+                              value={filterProgramIds}
+                              onChange={setFilterProgramIds}
+                              options={programs.map(p => ({ label: `${p.name} (K${p.batch})`, value: p.id }))}
+                              maxTagCount={2}
+                            />
+                          </div>
+                          <div style={{ marginBottom: '12px' }}>
+                            <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--color-text-secondary)', display: 'block', marginBottom: '4px' }}>Học kì:</label>
+                            <Select
+                              style={{ width: '100%' }}
+                              placeholder="Chọn học kì…"
+                              value={filterSemester}
+                              onChange={setFilterSemester}
+                              options={[1,2,3,4,5,6,7,8].map(n => ({ label: `Học kì ${n}`, value: n }))}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                            <Button size="small" onClick={() => { clearCurriculumFilter(); setFilterPopoverOpen(false); }}>Xóa lọc</Button>
+                            <Button size="small" type="primary" onClick={applyCurriculumFilter} loading={loadingFilter}>Áp dụng</Button>
+                          </div>
+                        </div>
+                      }
+                    >
+                      <Tooltip title="Lọc môn theo đợt học">
+                        <Button size="small" icon={<FilterOutlined />} type={filteredSubjectIds ? 'primary' : 'default'} />
+                      </Tooltip>
+                    </Popover>
+                  </div>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }} className="custom-scrollbar">
+                {!selectedListId && <div className="text-red-500 italic">Vui lòng chọn/tạo 1 phiên bản trước khi rải môn.</div>}
+                {selectedListId && displaySubjects.length === 0 && filteredSubjectIds && (
+                  <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-muted)' }}>
+                    <FilterOutlined style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.4 }} />
+                    <div>Không có môn nào phù hợp với bộ lọc đã chọn.</div>
+                    <Button size="small" type="link" onClick={clearCurriculumFilter}>Xóa bộ lọc</Button>
+                  </div>
+                )}
+                {selectedListId && displaySubjects.map(subj => (
+                  <div key={subj.subject_id} className="mb-4 border border-slate-200 rounded-lg">
+                    <div style={{ background: 'var(--color-bg)', padding: '8px 12px', borderBottom: '1px solid var(--color-border-light)', fontWeight: 600, color: 'var(--color-accent)', borderRadius: 'var(--radius-md) var(--radius-md) 0 0', fontSize: '13px' }}>
+                      {subj.subject_code} - {subj.subject_name}
+                    </div>
+                    <div className="p-3 grid grid-cols-2 gap-4">
+                      <DroppableSubjectArea 
+                        type="main" 
+                        subject={subj} 
+                        assignments={assignments.filter(a => a.subject_id === subj.subject_id && a.is_main_lecturer)} 
+                        removeAssignment={removeAssignment}
+                      />
+                      <DroppableSubjectArea 
+                        type="prac" 
+                        subject={subj} 
+                        assignments={assignments.filter(a => a.subject_id === subj.subject_id && !a.is_main_lecturer)} 
+                        removeAssignment={removeAssignment}
+                      />
+                    </div>
+                  </div>
+                ))}
+                </div>
+              </div>
+
+              {/* RIGHT COLUMN: LECTURER POOL */}
+              <div style={{ width: '300px', background: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', flexShrink: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                    <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Pool Giảng Viên</h3>
+                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{filteredLecturers.length}/{lecturers.length}</span>
+                  </div>
+                  <Input.Search
+                    placeholder="Tìm tên hoặc mã GV…"
+                    size="small"
+                    allowClear
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    style={{ marginBottom: '8px' }}
+                  />
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    <Tag.CheckableTag
+                      checked={lecTypeFilter === null}
+                      onChange={() => setLecTypeFilter(null)}
+                      style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
+                    >
+                      Tất cả
+                    </Tag.CheckableTag>
+                    <Tag.CheckableTag
+                      checked={lecTypeFilter === 'Cơ hữu'}
+                      onChange={(checked) => setLecTypeFilter(checked ? 'Cơ hữu' : null)}
+                      style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
+                    >
+                      Cơ hữu
+                    </Tag.CheckableTag>
+                    <Tag.CheckableTag
+                      checked={lecTypeFilter === 'Thỉnh giảng'}
+                      onChange={(checked) => setLecTypeFilter(checked ? 'Thỉnh giảng' : null)}
+                      style={{ fontSize: '11px', borderRadius: 'var(--radius-sm)' }}
+                    >
+                      Thỉnh giảng
+                    </Tag.CheckableTag>
+                    <div style={{ marginLeft: 'auto' }}>
+                      <Tooltip title={lecSortOrder === 'asc' ? 'Đang: Ít → Nhiều. Bấm đổi' : lecSortOrder === 'desc' ? 'Đang: Nhiều → Ít. Bấm tắt' : 'Sắp xếp theo số môn'}>
+                        <Button
+                          size="small"
+                          type={lecSortOrder ? 'primary' : 'default'}
+                          icon={lecSortOrder === 'desc' ? <SortDescendingOutlined /> : <SortAscendingOutlined />}
+                          onClick={() => {
+                            if (!lecSortOrder) setLecSortOrder('asc');
+                            else if (lecSortOrder === 'asc') setLecSortOrder('desc');
+                            else setLecSortOrder(null);
+                          }}
+                          style={{ padding: '0 6px' }}
+                        />
+                      </Tooltip>
+                    </div>
+                  </div>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }} className="custom-scrollbar">
+                  {filteredLecturers.map(lec => (
+                    <DraggableLecturer key={lec.lecturer_id} lecturer={lec} assignCount={getAssignCount(lec.lecturer_id)} />
+                  ))}
                 </div>
               </div>
             </div>
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px' }} className="custom-scrollbar">
-              {filteredLecturers.map(lec => (
-                <DraggableLecturer key={lec.lecturer_id} lecturer={lec} assignCount={getAssignCount(lec.lecturer_id)} />
-              ))}
-            </div>
-          </div>
-        </div>
 
-        {/* DragOverlay: Nổi trên toàn bộ z-index */}
-        <DragOverlay dropAnimation={null}>
-          {activeLecturer ? <LecturerOverlay lecturer={activeLecturer} /> : null}
-        </DragOverlay>
-      </DndContext>
+            {/* DragOverlay: Nổi trên toàn bộ z-index */}
+            <DragOverlay dropAnimation={null}>
+              {activeLecturer ? <LecturerOverlay lecturer={activeLecturer} /> : null}
+            </DragOverlay>
+          </DndContext>
+        </>
+      )}
 
       {/* DRAFT WIZARD MODAL */}
       <Modal 

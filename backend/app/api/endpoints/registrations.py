@@ -133,6 +133,7 @@ class RegistrationResponseItem(BaseModel):
     subject_name: str
     subject_code: str
     is_main_lecturer: bool
+    created_by_lecturer: bool = False
 
 @router.get("/lists/{list_id}/detailed", response_model=List[RegistrationResponseItem])
 def get_registrations_by_list(list_id: int, db: Session = Depends(get_db)):
@@ -152,7 +153,8 @@ def get_registrations_by_list(list_id: int, db: Session = Depends(get_db)):
             subject_id=r.subject.subject_id,
             subject_name=r.subject.subject_name,
             subject_code=r.subject.subject_code,
-            is_main_lecturer=r.is_main_lecturer
+            is_main_lecturer=r.is_main_lecturer,
+            created_by_lecturer=r.created_by_lecturer
         ))
     return results
 
@@ -160,6 +162,7 @@ class RegistrationAssignmentItem(BaseModel):
     lecturer_id: int
     subject_id: int
     is_main_lecturer: bool
+    created_by_lecturer: bool = False
 
 class BulkSavePayload(BaseModel):
     assignments: List[RegistrationAssignmentItem]
@@ -172,19 +175,51 @@ def save_registration_list(list_id: int, payload: BulkSavePayload, db: Session =
         raise HTTPException(status_code=404, detail="Không tìm thấy phiên bản danh sách")
         
     try:
+        # Lấy danh sách phân công cũ để so sánh
+        old_assignments = db.query(models.LecturerRegistration).filter(
+            models.LecturerRegistration.list_id == list_id
+        ).all()
+        old_assigned = {(r.lecturer_id, r.subject_id) for r in old_assignments}
+
         # Xóa toàn bộ chi tiết cũ của List này
         db.query(models.LecturerRegistration).filter(models.LecturerRegistration.list_id == list_id).delete()
         
         # Tạo chèn toàn bộ chi tiết mới
         new_records = []
+        newly_assigned_lecturers = set()
+
         for item in payload.assignments:
             new_records.append(models.LecturerRegistration(
                 list_id=list_id,
                 lecturer_id=item.lecturer_id,
                 subject_id=item.subject_id,
-                is_main_lecturer=item.is_main_lecturer
+                is_main_lecturer=item.is_main_lecturer,
+                created_by_lecturer=item.created_by_lecturer
             ))
+            
+            # Nếu được phân công bởi Admin và chưa từng được phân công môn này ở đợt này trước đó
+            if not item.created_by_lecturer and (item.lecturer_id, item.subject_id) not in old_assigned:
+                newly_assigned_lecturers.add(item.lecturer_id)
+
         db.add_all(new_records)
+
+        # Tạo thông báo cho các giảng viên mới được phân công
+        if newly_assigned_lecturers:
+            lecturers = db.query(models.Lecturer).filter(
+                models.Lecturer.lecturer_id.in_(newly_assigned_lecturers)
+            ).all()
+            
+            for lecturer in lecturers:
+                if lecturer.user_id:
+                    new_noti = models.Notification(
+                        user_id=lecturer.user_id,
+                        title="Phân công giảng dạy mới",
+                        content=f"Bạn đã được quản trị viên phân công dạy môn mới ở bảng phân công {db_list.list_name}, bấm vào để xem chi tiết.",
+                        link="/my-registrations",
+                        is_read=False
+                    )
+                    db.add(new_noti)
+
         db.commit()
         return {"message": f"Chốt danh sách thành công! (Lưu tổng cộng {len(new_records)} nguyện vọng)"}
     except Exception as e:

@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, Integer, String, Date, ForeignKey, Enum, Float, Time
+from sqlalchemy import Boolean, Column, Integer, String, Date, ForeignKey, Enum, Float, Time, DateTime
 from sqlalchemy.orm import relationship
 import enum
 from app.core.database import Base
@@ -124,6 +124,7 @@ class LecturerRegistration(Base):
     lecturer_id = Column(Integer, ForeignKey("lecturers.lecturer_id"), nullable=False)
     subject_id = Column(Integer, ForeignKey("subjects.subject_id"), nullable=False)
     is_main_lecturer = Column(Boolean, default=True) # True: Dạy chính, False: Dạy thực hành
+    created_by_lecturer = Column(Boolean, default=False, nullable=False)
     
     registration_list = relationship("RegistrationList", back_populates="registrations")
     lecturer = relationship("Lecturer", back_populates="registrations")
@@ -230,3 +231,15 @@ class TimetableRow(Base):
     subject = relationship("Subject")
     main_lecturer = relationship("Lecturer", foreign_keys=[main_lecturer_id])
     prac_lecturer = relationship("Lecturer", foreign_keys=[prac_lecturer_id])
+
+class Notification(Base):
+    __tablename__ = "notifications"
+    notification_id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.user_id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(200), nullable=False)
+    content = Column(String(1000), nullable=False)
+    link = Column(String(500), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User")

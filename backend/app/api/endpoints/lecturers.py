@@ -193,7 +193,7 @@ def get_lecturer_timetable_info(lecturer_id: int, session_id: Optional[int] = No
     )
     session_items = [
         schemas.LecturerTimetableSessionItem(
-            session_id=s.session_id, plan_name=s.plan_name, status=s.status.value
+            session_id=s.session_id, plan_name=s.plan_name, status=s.status.value, description=s.description
         )
         for s in sessions
     ]

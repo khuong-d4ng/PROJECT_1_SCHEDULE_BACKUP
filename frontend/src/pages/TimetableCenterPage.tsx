@@ -119,14 +119,16 @@ export default function TimetableCenterPage() {
   const [wizardConfig, setWizardConfig] = useState({
     plan_name: "",
     registration_list_id: null as number | null,
-    program_ids: [] as number[]
+    program_ids: [] as number[],
+    description: ""
   });
   const [entriesConfig, setEntriesConfig] = useState<any>({});
 
-  // Date Config Modal State
+  // Date/Info Config Modal State
   const [isDateModalOpen, setIsDateModalOpen] = useState(false);
   const [dateModalSessionId, setDateModalSessionId] = useState<number | null>(null);
   const [dateModalSessionName, setDateModalSessionName] = useState<string>('');
+  const [dateModalSessionDesc, setDateModalSessionDesc] = useState<string>('');
   const [startDateVal, setStartDateVal] = useState<dayjs.Dayjs | null>(null);
   const [dateModalLoading, setDateModalLoading] = useState(false);
 
@@ -134,6 +136,7 @@ export default function TimetableCenterPage() {
     setDateModalSessionId(session.session_id);
     setDateModalSessionName(session.plan_name);
     setStartDateVal(session.start_date ? dayjs(session.start_date) : null);
+    setDateModalSessionDesc(session.description || '');
     setIsDateModalOpen(true);
   };
 
@@ -142,18 +145,28 @@ export default function TimetableCenterPage() {
       message.warning("Vui lòng chọn ngày bắt đầu");
       return;
     }
+    if (!dateModalSessionName.trim()) {
+      message.warning("Tên đợt TKB không được bỏ trống");
+      return;
+    }
     setDateModalLoading(true);
     try {
       const formatted = startDateVal.format('YYYY-MM-DD');
+      // Update dates
       await apiClient.put(`/timetables/${dateModalSessionId}/dates`, { start_date: formatted });
-      message.success("Thiết lập thời gian đợt TKB thành công!");
+      // Update info (name & description)
+      await apiClient.put(`/timetables/${dateModalSessionId}/info`, {
+        plan_name: dateModalSessionName,
+        description: dateModalSessionDesc
+      });
+      message.success("Cấu hình đợt TKB thành công!");
       setIsDateModalOpen(false);
       fetchSessions();
       if (selectedSessionId === dateModalSessionId && dateModalSessionId !== null) {
         loadSessionDetails(dateModalSessionId);
       }
     } catch (e: any) {
-      message.error(e.response?.data?.detail || "Lỗi lưu cấu hình ngày");
+      message.error(e.response?.data?.detail || "Lỗi lưu cấu hình");
     } finally {
       setDateModalLoading(false);
     }
@@ -252,13 +265,14 @@ export default function TimetableCenterPage() {
       const res = await apiClient.post('/timetables/generate', {
         plan_name: wizardConfig.plan_name,
         registration_list_id: wizardConfig.registration_list_id,
+        description: wizardConfig.description,
         entries: payloadEntries
       });
 
       message.success("Tạo Đợt TKB và Gen dữ liệu Lớp-Môn thành công!");
       setIsWizardOpen(false);
       setCurrentStep(0);
-      setWizardConfig({ plan_name: "", registration_list_id: null, program_ids: [] });
+      setWizardConfig({ plan_name: "", registration_list_id: null, program_ids: [], description: "" });
       fetchSessions();
       loadSessionDetails(res.data.session_id);
     } catch (e: any) { message.error(e.response?.data?.detail || "Lỗi tạo TKB"); }
@@ -585,10 +599,24 @@ export default function TimetableCenterPage() {
             <div style={{ background: 'var(--color-white)', padding: '10px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                 <Button size="small" onClick={() => { setSelectedSessionId(null); setFocusedSubjectId(null); fetchSessions(); }}>← Quay lại</Button>
-                <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }}>
-                  {curSession?.plan_name}
-                </span>
-                <Tag color={curSession?.status === 'ACTIVE' ? 'green' : 'default'}>{curSession?.status}</Tag>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }}>
+                      {curSession?.plan_name}
+                    </span>
+                    <Tag color={curSession?.status === 'ACTIVE' ? 'green' : 'default'} style={{ margin: 0 }}>{curSession?.status}</Tag>
+                    {curSession?.start_date && (
+                      <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                        ({dayjs(curSession.start_date).format('DD/MM/YYYY')} - {curSession.end_date ? dayjs(curSession.end_date).format('DD/MM/YYYY') : '?'})
+                      </span>
+                    )}
+                  </div>
+                  {curSession?.description && (
+                    <span style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
+                      Ghi chú: {curSession.description}
+                    </span>
+                  )}
+                </div>
               </div>
               <Space>
                 <Tooltip title="Xuất file Excel TKB">
@@ -810,21 +838,33 @@ export default function TimetableCenterPage() {
           <Col span={8} key={s.session_id}>
             <Card hoverable className="h-full" style={{ borderTop: '3px solid var(--color-primary)', borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-card)' }} actions={[
               <Button type="link" icon={<EyeOutlined />} onClick={() => loadSessionDetails(s.session_id)}>Workspace</Button>,
-              <Button type="link" icon={<CalendarOutlined />} onClick={() => handleOpenDateModal(s)}>Thời gian</Button>,
+              <Button type="link" icon={<CalendarOutlined />} onClick={() => handleOpenDateModal(s)}>Cấu hình</Button>,
               <Button type="link" danger icon={<DeleteOutlined />} onClick={() => handleDeleteSession(s.session_id)}>Xóa</Button>
             ]}>
               <Card.Meta
-                title={<div className="font-bold text-lg">{s.plan_name}</div>}
+                title={<div className="font-bold text-lg truncate" title={s.plan_name}>{s.plan_name}</div>}
                 description={
-                  <div className="mt-2 space-y-2">
-                    <div><CalendarOutlined className="mr-2" />Ngày tạo: {s.created_at}</div>
-                    <div style={{ display: 'flex', alignItems: 'center' }}>
-                      <CalendarOutlined className="mr-2" />
+                  <div className="mt-2 space-y-2 text-xs">
+                    {s.description ? (
+                      <p style={{ color: 'var(--color-text-secondary)', marginBottom: '8px', minHeight: '32px', overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                        {s.description}
+                      </p>
+                    ) : (
+                      <p style={{ color: 'var(--color-text-muted)', fontStyle: 'italic', marginBottom: '8px', minHeight: '32px' }}>
+                        Không có ghi chú
+                      </p>
+                    )}
+                    <div style={{ color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px', borderTop: '1px dashed var(--color-border-light)', paddingTop: '8px' }}>
+                      <CalendarOutlined className="mr-1" />
+                      <span>Ngày tạo: {dayjs(s.created_at).format('DD/MM/YYYY')}</span>
+                    </div>
+                    <div style={{ color: 'var(--color-text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      <CalendarOutlined className="mr-1" />
                       <span>
                         Thời gian: {s.start_date ? `${dayjs(s.start_date).format('DD/MM/YYYY')} - ${s.end_date ? dayjs(s.end_date).format('DD/MM/YYYY') : '?'}` : 'Chưa thiết lập'}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-400">Trạng thái: {s.status}</div>
+                    <div style={{ color: 'var(--color-text-muted)' }}>Trạng thái: <Tag color={s.status === 'ACTIVE' ? 'green' : 'default'} style={{ fontSize: '10px', padding: '0 4px', lineHeight: '1.5' }}>{s.status}</Tag></div>
                   </div>
                 }
               />
@@ -857,6 +897,13 @@ export default function TimetableCenterPage() {
               <label className="font-semibold block mb-1">Tên Đợt TKB (*):</label>
               <Input placeholder="VD: TKB Chính khóa HK1 2024-2025"
                 value={wizardConfig.plan_name} onChange={e => setWizardConfig({ ...wizardConfig, plan_name: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="font-semibold block mb-1">Ghi chú / Mô tả (Không bắt buộc):</label>
+              <Input.TextArea placeholder="Ghi chú đợt TKB (ví dụ: thông tin chung, lưu ý cho giảng viên...)"
+                value={wizardConfig.description} onChange={e => setWizardConfig({ ...wizardConfig, description: e.target.value })}
+                rows={3}
               />
             </div>
             <div>
@@ -926,7 +973,7 @@ export default function TimetableCenterPage() {
 
       {/* MODAL DATE CONFIG */}
       <Modal
-        title={`Thiết lập thời gian Đợt TKB: ${dateModalSessionName}`}
+        title="Cấu hình Đợt TKB"
         open={isDateModalOpen}
         onCancel={() => setIsDateModalOpen(false)}
         onOk={handleSaveSessionDate}
@@ -935,10 +982,26 @@ export default function TimetableCenterPage() {
         cancelText="Hủy"
         destroyOnClose
       >
-        <div style={{ padding: '16px 0' }}>
-          <div style={{ background: '#eff6ff', border: '1px solid #dbeafe', color: '#1e40af', padding: '12px', borderRadius: '8px', fontSize: '13px', marginBottom: '16px' }}>
-            Chọn ngày bắt đầu cho đợt TKB. Hệ thống sẽ tự động gán ngày bắt đầu này cho toàn bộ các lớp môn học thuộc đợt, và tự động tính toán ngày kết thúc cho mỗi môn (mỗi tuần 1 buổi, tối đa 4 tiết).
+        <div style={{ padding: '16px 0' }} className="space-y-4">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontWeight: 600, color: '#374151', fontSize: '13.5px' }}>Tên đợt TKB (*):</span>
+            <Input
+              value={dateModalSessionName}
+              onChange={e => setDateModalSessionName(e.target.value)}
+              placeholder="Nhập tên đợt TKB"
+            />
           </div>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontWeight: 600, color: '#374151', fontSize: '13.5px' }}>Ghi chú / Mô tả (Không bắt buộc):</span>
+            <Input.TextArea
+              value={dateModalSessionDesc}
+              onChange={e => setDateModalSessionDesc(e.target.value)}
+              placeholder="Nhập ghi chú hoặc mô tả đợt TKB"
+              rows={3}
+            />
+          </div>
+          
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <span style={{ fontWeight: 600, color: '#374151', fontSize: '13.5px' }}>Ngày bắt đầu (*):</span>
             <DatePicker
@@ -948,6 +1011,10 @@ export default function TimetableCenterPage() {
               format="DD/MM/YYYY"
               placeholder="Chọn ngày bắt đầu"
             />
+          </div>
+
+          <div style={{ background: '#eff6ff', border: '1px solid #dbeafe', color: '#1e40af', padding: '12px', borderRadius: '8px', fontSize: '13px' }}>
+            Chọn ngày bắt đầu cho đợt TKB. Hệ thống sẽ tự động gán ngày bắt đầu này cho toàn bộ các lớp môn học thuộc đợt, và tự động tính toán ngày kết thúc cho mỗi môn (mỗi tuần 1 buổi, tối đa 4 tiết).
           </div>
         </div>
       </Modal>
