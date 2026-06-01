@@ -10,6 +10,8 @@ interface Lecturer {
   type: string;
   max_quota: number;
   position?: string;
+  email?: string;
+  receive_emails?: boolean;
 }
 
 interface RegistrationItem {
@@ -262,6 +264,28 @@ const LecturersPage: React.FC = () => {
     }
   };
 
+  const handleDelete = async () => {
+    if (!selectedLecturer) return;
+    Modal.confirm({
+      title: 'Xác nhận xóa giảng viên?',
+      content: 'Hệ thống sẽ tiến hành xóa giảng viên này cùng với tài khoản đăng nhập liên đới khỏi CSDL. Thao tác này không thể hoàn tác.',
+      okText: 'Xóa',
+      okType: 'danger',
+      cancelText: 'Hủy',
+      onOk: async () => {
+        try {
+          await apiClient.delete(`/lecturers/${selectedLecturer.lecturer_id}`);
+          message.success('Xóa giảng viên thành công');
+          setIsEditModalOpen(false);
+          setDrawerOpen(false);
+          fetchLecturers();
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || 'Không thể xóa giảng viên.');
+        }
+      }
+    });
+  };
+
   const handlePreviewUpload = async (options: any) => {
     const { file } = options;
     const formData = new FormData();
@@ -320,6 +344,11 @@ const LecturersPage: React.FC = () => {
       render: (val: string) => val || <span style={{ color: '#bfbfbf' }}>-</span>,
       sorter: (a: Lecturer, b: Lecturer) => (a.position || '').localeCompare(b.position || '')
     },
+    {
+      title: 'Email', dataIndex: 'email', width: 200, ellipsis: true,
+      render: (val: string) => val || <span style={{ color: '#bfbfbf', fontStyle: 'italic' }}>Chưa cấu hình</span>,
+      sorter: (a: Lecturer, b: Lecturer) => (a.email || '').localeCompare(b.email || '')
+    },
     { 
       title: 'Chỉ tiêu (tiết)', dataIndex: 'max_quota', width: 120, align: 'center' as const, className: 'tabular-nums',
       sorter: (a: Lecturer, b: Lecturer) => (a.max_quota || 0) - (b.max_quota || 0)
@@ -335,8 +364,8 @@ const LecturersPage: React.FC = () => {
 
   // --- Registration Tab Columns ---
   const regColumns = [
-    { title: 'Mã môn', dataIndex: 'subject_code', width: 100 },
-    { title: 'Tên môn học', dataIndex: 'subject_name', ellipsis: true },
+    { title: 'Mã học phần', dataIndex: 'subject_code', width: 100 },
+    { title: 'Tên học phần', dataIndex: 'subject_name', ellipsis: true },
     { title: 'TC', dataIndex: 'credits', width: 50, align: 'center' as const },
     { 
       title: 'Vai trò', width: 80, align: 'center' as const,
@@ -351,8 +380,8 @@ const LecturersPage: React.FC = () => {
   // --- Timetable Tab Columns ---
   const ttColumns = [
     { title: 'Lớp', dataIndex: 'class_name', width: 110 },
-    { title: 'Mã môn', dataIndex: 'subject_code', width: 90 },
-    { title: 'Tên môn', dataIndex: 'subject_name', ellipsis: true },
+    { title: 'Mã học phần', dataIndex: 'subject_code', width: 90 },
+    { title: 'Tên học phần', dataIndex: 'subject_name', ellipsis: true },
     {
       title: 'Buổi', width: 80, align: 'center' as const,
       render: (_: any, r: TimetableRowItem) => (
@@ -389,7 +418,7 @@ const LecturersPage: React.FC = () => {
             accept=".xlsx"
           >
             <Button icon={<CloudUploadOutlined />} loading={uploading}>
-              Import Excel
+              Nhập từ Excel
             </Button>
           </Upload>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>
@@ -480,6 +509,18 @@ const LecturersPage: React.FC = () => {
                 <Descriptions.Item label="Chỉ tiêu">
                   <span className="tabular-nums" style={{ fontWeight: 600 }}>{selectedLecturer.max_quota} tiết</span>
                 </Descriptions.Item>
+                <Descriptions.Item label="Email" span={2}>
+                  {selectedLecturer.email ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontWeight: 500 }}>{selectedLecturer.email}</span>
+                      <Tag color={selectedLecturer.receive_emails ? 'blue' : 'default'} style={{ fontSize: '11px', margin: 0 }}>
+                        {selectedLecturer.receive_emails ? 'Nhận thông báo' : 'Tắt thông báo'}
+                      </Tag>
+                    </div>
+                  ) : (
+                    <span style={{ color: 'var(--color-text-muted)', fontStyle: 'italic' }}>Chưa cấu hình</span>
+                  )}
+                </Descriptions.Item>
               </Descriptions>
             </div>
 
@@ -492,7 +533,7 @@ const LecturersPage: React.FC = () => {
                 items={[
                   {
                     key: 'regs',
-                    label: <span><BookOutlined /> Môn dạy</span>,
+                    label: <span><BookOutlined /> Học phần dạy</span>,
                     children: (
                       <div style={{ padding: '16px 24px', overflowY: 'auto', flex: 1 }}>
                         <Select
@@ -551,7 +592,7 @@ const LecturersPage: React.FC = () => {
                               }}>
                                 <span>{timetableInfo.summary.total_classes} <strong>lớp</strong></span>
                                 <span>·</span>
-                                <span>{timetableInfo.summary.total_subjects} <strong>môn</strong></span>
+                                <span>{timetableInfo.summary.total_subjects} <strong>học phần</strong></span>
                                 <span>·</span>
                                 <span style={{ color: 'var(--color-primary)', fontWeight: 600 }}>
                                   {timetableInfo.summary.total_hours}/{selectedLecturer.max_quota} tiết
@@ -607,13 +648,13 @@ const LecturersPage: React.FC = () => {
 
       {/* Import Preview Modal */}
       <Modal
-        title="Xác nhận Import Giảng viên"
+        title="Xác nhận nhập danh sách Giảng viên"
         open={isPreviewOpen}
         onCancel={() => setIsPreviewOpen(false)}
         onOk={confirmImport}
         confirmLoading={uploading}
         width={800}
-        okText="Xác nhận Import"
+        okText="Xác nhận Nhập"
         cancelText="Hủy"
       >
         <p style={{ marginBottom: '16px', color: 'var(--color-success)', fontWeight: 500 }}>
@@ -655,6 +696,9 @@ const LecturersPage: React.FC = () => {
           <Form.Item name="position" label="Chức vụ (Tùy chọn)">
             <Input placeholder="VD: Trưởng bộ môn, Phó khoa…" autoComplete="off" />
           </Form.Item>
+          <Form.Item name="email" label="Email nhận thông báo" rules={[{ type: 'email', message: 'Email không hợp lệ' }]}>
+            <Input placeholder="VD: example@gmail.com…" autoComplete="off" />
+          </Form.Item>
           <Form.Item name="max_quota" label="Chỉ tiêu số tiết">
             <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />
           </Form.Item>
@@ -666,10 +710,18 @@ const LecturersPage: React.FC = () => {
         title="Chỉnh sửa Thông tin Giảng viên"
         open={isEditModalOpen}
         onCancel={() => setIsEditModalOpen(false)}
-        onOk={() => editForm.submit()}
         confirmLoading={submitting}
-        okText="Lưu thay đổi"
-        cancelText="Hủy"
+        footer={[
+          <Button key="delete" danger type="primary" style={{ float: 'left' }} onClick={handleDelete}>
+            Xóa Giảng viên
+          </Button>,
+          <Button key="cancel" onClick={() => setIsEditModalOpen(false)}>
+            Hủy
+          </Button>,
+          <Button key="submit" type="primary" loading={submitting} onClick={() => editForm.submit()}>
+            Lưu thay đổi
+          </Button>
+        ]}
       >
         <Form form={editForm} layout="vertical" onFinish={handleUpdate}>
           <Form.Item name="lecturer_code" label="Mã giảng viên" rules={[{ required: true, message: 'Vui lòng nhập mã GV' }]}>
@@ -686,6 +738,9 @@ const LecturersPage: React.FC = () => {
           </Form.Item>
           <Form.Item name="position" label="Chức vụ (Tùy chọn)">
             <Input placeholder="VD: Trưởng bộ môn, Phó khoa…" autoComplete="off" />
+          </Form.Item>
+          <Form.Item name="email" label="Email nhận thông báo" rules={[{ type: 'email', message: 'Email không hợp lệ' }]}>
+            <Input placeholder="VD: example@gmail.com…" autoComplete="off" />
           </Form.Item>
           <Form.Item name="max_quota" label="Chỉ tiêu số tiết">
             <InputNumber min={0} style={{ width: '100%' }} placeholder="0" />

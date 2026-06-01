@@ -52,6 +52,7 @@ class LecturerBase(BaseModel):
     type: LecturerTypeEnum = LecturerTypeEnum.FULL_TIME
     max_quota: int = 0
     position: Optional[str] = None
+    email: Optional[str] = None
 
 class LecturerCreate(LecturerBase):
     user_id: Optional[int] = None
@@ -62,10 +63,12 @@ class LecturerUpdate(BaseModel):
     type: Optional[LecturerTypeEnum] = None
     max_quota: Optional[int] = None
     position: Optional[str] = None
+    email: Optional[str] = None
 
 class Lecturer(LecturerBase):
     lecturer_id: int
     user_id: Optional[int] = None
+    receive_emails: bool = True
 
     class Config:
         from_attributes = True
@@ -209,6 +212,7 @@ class SessionDateUpdate(BaseModel):
 class SessionInfoUpdate(BaseModel):
     plan_name: Optional[str] = None
     description: Optional[str] = None
+    registration_list_id: Optional[int] = None
 
 class TimetableRowResponse(BaseModel):
     row_id: int

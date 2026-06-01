@@ -153,7 +153,7 @@ const LecturerPortalPage: React.FC = () => {
 
         <Spin spinning={loadingRegs}>
           {selectedList.subjects.length === 0 ? (
-            <Empty description="Đợt đăng ký này chưa có môn học nào" />
+            <Empty description="Đợt đăng ký này chưa có học phần nào" />
           ) : (
             <>
               {/* Summary bar */}
@@ -316,7 +316,7 @@ const LecturerPortalPage: React.FC = () => {
               <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#4b5563' }}>
                   <BookOutlined style={{ color: '#f37423' }} />
-                  <span><strong>{list.subjects.length}</strong> môn học</span>
+                  <span><strong>{list.subjects.length}</strong> học phần</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '13px', color: '#4b5563' }}>
                   <EyeOutlined style={{ color: '#3b82f6' }} />

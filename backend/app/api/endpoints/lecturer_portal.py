@@ -7,6 +7,7 @@ from typing import List, Optional
 from app.core.database import get_db
 from app.core.security import get_current_user, require_role
 from app import models
+from app.api.endpoints.auth import UserInfo
 
 router = APIRouter()
 
@@ -41,6 +42,10 @@ class RegisterSubjectItem(BaseModel):
 class RegisterRequest(BaseModel):
     list_id: int
     subjects: List[RegisterSubjectItem]
+
+class ProfileUpdateRequest(BaseModel):
+    email: Optional[str] = None
+    receive_emails: Optional[bool] = None
 
 # ---------- Endpoints ----------
 
@@ -148,3 +153,53 @@ def register_subjects(
     
     db.commit()
     return {"message": f"Đã lưu {len(req.subjects)} nguyện vọng thành công!"}
+
+
+@router.put("/profile", response_model=UserInfo)
+def update_profile(
+    req: ProfileUpdateRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Cập nhật email nhận thông báo và tùy chọn nhận email của giảng viên hiện tại."""
+    email_val = req.email
+    if email_val is not None:
+        email_val = email_val.strip()
+        if email_val == "":
+            email_val = None
+    
+    # Check unique constraint if email_val is not None
+    if email_val is not None:
+        existing_email_user = db.query(models.User).filter(
+            models.User.email == email_val,
+            models.User.user_id != current_user.user_id
+        ).first()
+        if existing_email_user:
+            raise HTTPException(status_code=400, detail="Email này đã được sử dụng bởi tài khoản khác")
+
+    current_user.email = email_val
+
+    # If email is empty (None), receive_emails MUST be False.
+    if current_user.email is None:
+        current_user.receive_emails = False
+    elif req.receive_emails is not None:
+        current_user.receive_emails = req.receive_emails
+
+    db.commit()
+    db.refresh(current_user)
+
+    lecturer_id = None
+    full_name = None
+    if current_user.lecturer_profile:
+        lecturer_id = current_user.lecturer_profile.lecturer_id
+        full_name = current_user.lecturer_profile.full_name
+
+    return UserInfo(
+        user_id=current_user.user_id,
+        username=current_user.username,
+        email=current_user.email,
+        role=current_user.role.value,
+        receive_emails=current_user.receive_emails,
+        lecturer_id=lecturer_id,
+        full_name=full_name or current_user.username,
+    )

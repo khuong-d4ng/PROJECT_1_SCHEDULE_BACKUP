@@ -1,10 +1,11 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Button, ConfigProvider, Select, Spin, message, Tag, Table, Popover, Badge } from 'antd';
+import { Button, ConfigProvider, Select, Spin, message, Tag, Table, Popover, Badge, Input, Switch } from 'antd';
 import {
   BookOutlined, TeamOutlined, AppstoreOutlined,
   BankOutlined, CalendarOutlined, FormOutlined,
   DashboardOutlined, ThunderboltOutlined,
-  UploadOutlined, LogoutOutlined, BellOutlined
+  UploadOutlined, LogoutOutlined, BellOutlined,
+  SettingOutlined, CloseOutlined
 } from '@ant-design/icons';
 import { useState, useEffect, useMemo } from 'react';
 import SubjectsPage from './pages/SubjectsPage';
@@ -15,6 +16,7 @@ import TimetableCenterPage from './pages/TimetableCenterPage';
 import ClassesPage from './pages/ClassesPage';
 import LoginPage from './pages/LoginPage';
 import LecturerPortalPage from './pages/LecturerPortalPage';
+import UsersPage from './pages/UsersPage';
 import apiClient from './api/client';
 import dayjs from 'dayjs';
 
@@ -96,11 +98,51 @@ const DashboardPage = () => {
     summary: { total_classes: 0, total_subjects: 0, total_hours: 0, slots: [] }
   });
   const [loadingLecturerData, setLoadingLecturerData] = useState(false);
+  const [email, setEmail] = useState<string>('');
+  const [receiveEmails, setReceiveEmails] = useState<boolean>(true);
+  const [updatingProfile, setUpdatingProfile] = useState(false);
+
+  const handleUpdateProfile = async (newEmail: string, newReceive: boolean) => {
+    setUpdatingProfile(true);
+    try {
+      const res = await apiClient.put('/lecturer-portal/profile', {
+        email: newEmail,
+        receive_emails: newReceive,
+      });
+      message.success('Cập nhật thông tin nhận thông báo thành công!');
+      setEmail(res.data.email || '');
+      setReceiveEmails(res.data.receive_emails);
+      setLecturerProfile((prev: any) => prev ? { ...prev, email: res.data.email, receive_emails: res.data.receive_emails } : null);
+    } catch (err: any) {
+      message.error(err.response?.data?.detail || 'Lỗi khi cập nhật cấu hình thông báo');
+      if (lecturerProfile) {
+        setEmail(lecturerProfile.email || '');
+        setReceiveEmails(lecturerProfile.receive_emails);
+      }
+    } finally {
+      setUpdatingProfile(false);
+    }
+  };
 
   // Common State
   const [dashboardSessions, setDashboardSessions] = useState<any[]>([]);
-  const [selectedDashboardSession, setSelectedDashboardSession] = useState<number | null>(null);
+  const [selectedDashboardSession, setSelectedDashboardSession] = useState<number | 'all' | null>('all');
   const [loadingSchedule, setLoadingSchedule] = useState(false);
+
+  const [dismissedSessionIds, setDismissedSessionIds] = useState<number[]>(() => {
+    try {
+      const stored = localStorage.getItem('dismissed_session_notis');
+      return stored ? JSON.parse(stored) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const handleDismissNotification = (sessionId: number) => {
+    const updated = [...dismissedSessionIds, sessionId];
+    setDismissedSessionIds(updated);
+    localStorage.setItem('dismissed_session_notis', JSON.stringify(updated));
+  };
 
   const activeSession = useMemo(() => {
     return selectedDashboardSession
@@ -120,6 +162,8 @@ const DashboardPage = () => {
             apiClient.get('/timetables/'),
           ]);
           setLecturerProfile(profRes.data);
+          setEmail(profRes.data.email || '');
+          setReceiveEmails(profRes.data.receive_emails ?? false);
           setDashboardSessions(sesRes.data);
           setLoadingLecturerData(false);
         } else {
@@ -136,7 +180,7 @@ const DashboardPage = () => {
           setDashboardSessions(sesRes.data);
           setAllLecturers(lecRes.data);
         }
-      } catch {}
+      } catch { }
     };
     load();
   }, [isLecturer, currentUser]);
@@ -147,8 +191,33 @@ const DashboardPage = () => {
     const fetchSessionStats = async () => {
       setLoadingSchedule(true);
       try {
-        const res = await apiClient.get(`/timetables/${selectedDashboardSession}/stats`);
-        setSessionStats(res.data);
+        if (selectedDashboardSession === 'all') {
+          const promises = dashboardSessions.map(s => 
+            apiClient.get(`/timetables/${s.session_id}/stats`).catch(() => ({ data: {} }))
+          );
+          const results = await Promise.all(promises);
+          
+          const merged: Record<string, any> = {};
+          results.forEach(res => {
+            const sStats = res.data;
+            Object.entries(sStats).forEach(([lid, stats]: [string, any]) => {
+              if (!merged[lid]) {
+                merged[lid] = { hours: 0, subjects: 0, classes: 0, slots: 0, slots_list: [] };
+              }
+              merged[lid].hours += stats.hours || 0;
+              merged[lid].classes += stats.classes || 0;
+              merged[lid].subjects += stats.subjects || 0;
+              
+              const combinedSlots = new Set([...merged[lid].slots_list, ...(stats.slots_list || [])]);
+              merged[lid].slots_list = Array.from(combinedSlots);
+              merged[lid].slots = merged[lid].slots_list.length;
+            });
+          });
+          setSessionStats(merged);
+        } else {
+          const res = await apiClient.get(`/timetables/${selectedDashboardSession}/stats`);
+          setSessionStats(res.data);
+        }
       } catch {
         message.error("Lỗi lấy thông tin lịch trình");
       } finally {
@@ -156,7 +225,7 @@ const DashboardPage = () => {
       }
     };
     fetchSessionStats();
-  }, [isLecturer, selectedDashboardSession]);
+  }, [isLecturer, selectedDashboardSession, dashboardSessions]);
 
   // Load schedule for Lecturer
   useEffect(() => {
@@ -164,7 +233,7 @@ const DashboardPage = () => {
     const fetchLecturerTimetable = async () => {
       setLoadingSchedule(true);
       try {
-        const url = selectedDashboardSession
+        const url = selectedDashboardSession && selectedDashboardSession !== 'all'
           ? `/lecturers/${currentUser.lecturer_id}/timetable-info?session_id=${selectedDashboardSession}`
           : `/lecturers/${currentUser.lecturer_id}/timetable-info`;
         const res = await apiClient.get(url);
@@ -182,7 +251,7 @@ const DashboardPage = () => {
   const renderScheduleGrid = (slotsList: string[]) => {
     const days = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
     const hasSlot = (slotStr: string) => slotsList.includes(slotStr);
-    
+
     return (
       <div className="flex flex-col gap-1 border border-gray-200 p-1 bg-gray-50 rounded">
         <div className="flex gap-1">
@@ -221,7 +290,7 @@ const DashboardPage = () => {
             Buổi đã xếp: <strong style={{ color: '#f37423' }}>{totalBusy}/12</strong> | Trống: <strong style={{ color: '#16a34a' }}>{totalEmpty} buổi</strong>
           </span>
         </div>
-        
+
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'center' }}>
             <thead>
@@ -388,6 +457,39 @@ const DashboardPage = () => {
             </div>
           </div>
         </div>
+
+        <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+          <div style={{ fontSize: '11px', color: '#9ca3af', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px' }}>Email & Thông báo</div>
+
+          <Input
+            placeholder="Chưa cấu hình email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            disabled={updatingProfile}
+            style={{ borderRadius: '6px' }}
+            suffix={
+              <Button
+                type="text"
+                size="small"
+                loading={updatingProfile}
+                onClick={() => handleUpdateProfile(email, receiveEmails)}
+                style={{ color: 'var(--color-primary)', fontWeight: 600, padding: '0 4px' }}
+              >
+                Lưu
+              </Button>
+            }
+          />
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '4px' }}>
+            <span style={{ fontSize: '12.5px', color: '#4b5563' }}>Nhận email thông báo hệ thống</span>
+            <Switch
+              checked={email && email.trim() !== '' ? receiveEmails : false}
+              disabled={!email || email.trim() === '' || updatingProfile}
+              onChange={checked => handleUpdateProfile(email, checked)}
+              loading={updatingProfile}
+            />
+          </div>
+        </div>
       </div>
     );
   };
@@ -396,7 +498,7 @@ const DashboardPage = () => {
     return [...allLecturers].sort((a, b) => {
       const statsA = sessionStats[a.lecturer_id] || { slots: 0, hours: 0 };
       const statsB = sessionStats[b.lecturer_id] || { slots: 0, hours: 0 };
-      
+
       if (sortBy === 'workload') {
         if (statsB.slots !== statsA.slots) return statsB.slots - statsA.slots;
         return a.full_name.localeCompare(b.full_name);
@@ -416,7 +518,7 @@ const DashboardPage = () => {
 
   const cards = [
     { label: 'Tổng Giảng viên', value: stats.lecturers, icon: <TeamOutlined />, color: 'var(--color-primary)' },
-    { label: 'Tổng Môn học', value: stats.subjects, icon: <BookOutlined />, color: 'var(--color-accent)' },
+    { label: 'Tổng Học phần', value: stats.subjects, icon: <BookOutlined />, color: 'var(--color-accent)' },
     { label: 'Đợt TKB', value: stats.sessions, icon: <CalendarOutlined />, color: 'var(--color-success)' },
   ];
 
@@ -451,12 +553,12 @@ const DashboardPage = () => {
         render: (text: string) => <Tag color="blue">{text}</Tag>
       },
       {
-        title: 'Mã Môn',
+        title: 'Mã Học phần',
         dataIndex: 'subject_code',
         key: 'subject_code',
       },
       {
-        title: 'Môn học',
+        title: 'Học phần',
         dataIndex: 'subject_name',
         key: 'subject_name',
         render: (text: string) => <span style={{ fontWeight: 500 }}>{text}</span>
@@ -517,35 +619,99 @@ const DashboardPage = () => {
                   value={selectedDashboardSession}
                   onChange={v => setSelectedDashboardSession(v)}
                   options={[
-                    { label: 'Tất cả TKB', value: null },
+                    { label: 'Tất cả TKB', value: 'all' },
                     ...dashboardSessions.map(s => ({ label: s.plan_name, value: s.session_id }))
                   ]}
                   allowClear
                 />
               </div>
 
-              {activeSession?.description && (
-                <div style={{
-                  background: 'linear-gradient(135deg, #fffaf5, #fff5eb)',
-                  border: '1px solid #ffe3c9',
-                  borderRadius: '12px',
-                  padding: '14px 18px',
-                  marginBottom: '16px',
-                  boxShadow: '0 2px 6px rgba(243, 116, 35, 0.05)',
-                  display: 'flex',
-                  alignItems: 'flex-start',
-                  gap: '12px'
-                }}>
-                  <span style={{ fontSize: '20px', lineHeight: 1 }}>📢</span>
-                  <div>
-                    <div style={{ fontWeight: 600, color: '#c2410c', fontSize: '13.5px', marginBottom: '2px' }}>
-                      Thông báo/Lưu ý đợt TKB ({activeSession.plan_name})
+              {selectedDashboardSession === 'all' ? (
+                dashboardSessions
+                  .filter(s => s.description && s.description.trim() !== '' && !dismissedSessionIds.includes(s.session_id))
+                  .map(s => (
+                    <div key={s.session_id} style={{
+                      background: 'linear-gradient(135deg, #fffaf5, #fff5eb)',
+                      border: '1px solid #ffe3c9',
+                      borderRadius: '12px',
+                      padding: '14px 18px',
+                      marginBottom: '16px',
+                      boxShadow: '0 2px 6px rgba(243, 116, 35, 0.05)',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      justifyContent: 'space-between',
+                      gap: '12px'
+                    }}>
+                      <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                        <CalendarOutlined style={{ fontSize: '20px', color: '#c2410c', marginTop: '2px' }} />
+                        <div>
+                          <div style={{ fontWeight: 600, color: '#c2410c', fontSize: '13.5px', marginBottom: '2px' }}>
+                            Thông báo/Lưu ý đợt TKB ({s.plan_name})
+                          </div>
+                          <div style={{ color: '#4b5563', fontSize: '13px', lineHeight: '1.5' }}>
+                            {s.description}
+                          </div>
+                        </div>
+                      </div>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CloseOutlined style={{ color: '#c2410c', opacity: 0.6 }} />}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDismissNotification(s.session_id);
+                        }}
+                        style={{
+                          flexShrink: 0,
+                          alignSelf: 'flex-start',
+                          marginTop: '-2px',
+                          marginRight: '-6px'
+                        }}
+                      />
                     </div>
-                    <div style={{ color: '#4b5563', fontSize: '13px', lineHeight: '1.5' }}>
-                      {activeSession.description}
+                  ))
+              ) : (
+                activeSession?.description && !dismissedSessionIds.includes(activeSession.session_id) && (
+                  <div style={{
+                    background: 'linear-gradient(135deg, #fffaf5, #fff5eb)',
+                    border: '1px solid #ffe3c9',
+                    borderRadius: '12px',
+                    padding: '14px 18px',
+                    marginBottom: '16px',
+                    boxShadow: '0 2px 6px rgba(243, 116, 35, 0.05)',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    justifyContent: 'space-between',
+                    gap: '12px'
+                  }}>
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                      <CalendarOutlined style={{ fontSize: '20px', color: '#c2410c', marginTop: '2px' }} />
+                      <div>
+                        <div style={{ fontWeight: 600, color: '#c2410c', fontSize: '13.5px', marginBottom: '2px' }}>
+                          Thông báo/Lưu ý đợt TKB ({activeSession.plan_name})
+                        </div>
+                        <div style={{ color: '#4b5563', fontSize: '13px', lineHeight: '1.5' }}>
+                          {activeSession.description}
+                        </div>
+                      </div>
                     </div>
+                    <Button
+                      type="text"
+                      size="small"
+                      icon={<CloseOutlined style={{ color: '#c2410c', opacity: 0.6 }} />}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDismissNotification(activeSession.session_id);
+                      }}
+                      style={{
+                        flexShrink: 0,
+                        alignSelf: 'flex-start',
+                        marginTop: '-2px',
+                        marginRight: '-6px'
+                      }}
+                    />
                   </div>
-                </div>
+                )
               )}
 
               {renderLecturerWeeklyGrid(busySlotsList)}
@@ -592,7 +758,7 @@ const DashboardPage = () => {
               <div>
                 <div style={{ fontSize: '13px', color: 'var(--color-text-secondary)', fontWeight: 500, marginBottom: '8px' }}>{c.label}</div>
                 <div style={{ fontSize: '32px', fontWeight: 700, color: c.color, fontVariantNumeric: 'tabular-nums' }}>{c.value}</div>
-                
+
                 {c.label === 'Tổng Giảng viên' && (
                   <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--color-text-secondary)', display: 'flex', gap: '16px' }}>
                     <div>
@@ -631,7 +797,7 @@ const DashboardPage = () => {
             </Button>
           </Link>
           <Link to="/lecturers">
-            <Button icon={<UploadOutlined />}>Import Giảng viên</Button>
+            <Button icon={<UploadOutlined />}>Nhập danh sách Giảng viên</Button>
           </Link>
           <Link to="/registrations">
             <Button icon={<FormOutlined />}>Quản lý Nguyện vọng</Button>
@@ -650,7 +816,7 @@ const DashboardPage = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h3 style={{ fontSize: '18px', fontWeight: 700, margin: 0 }}>Tổng quát Lịch Giảng Viên</h3>
           <div style={{ display: 'flex', gap: '12px' }}>
-            <Select 
+            <Select
               value={sortBy}
               onChange={v => setSortBy(v)}
               style={{ width: 220 }}
@@ -665,12 +831,15 @@ const DashboardPage = () => {
               style={{ width: 300 }}
               value={selectedDashboardSession}
               onChange={v => setSelectedDashboardSession(v)}
-              options={dashboardSessions.map(s => ({ label: s.plan_name, value: s.session_id }))}
+              options={[
+                { label: 'Tất cả', value: 'all' },
+                ...dashboardSessions.map(s => ({ label: s.plan_name, value: s.session_id }))
+              ]}
               allowClear
             />
           </div>
         </div>
-        
+
         {selectedDashboardSession ? (
           <Spin spinning={loadingSchedule}>
             <div className="flex flex-col gap-3 max-h-[500px] overflow-y-auto pr-2 custom-scrollbar">
@@ -682,7 +851,7 @@ const DashboardPage = () => {
                       <div className="font-semibold text-gray-800 text-sm">{lec.full_name}</div>
                       <div className="text-xs text-gray-500 mt-1">{lec.lecturer_code} • {lec.type}</div>
                     </div>
-                    
+
                     <div className="flex-shrink-0 mx-6">
                       {renderScheduleGrid(lecStats.slots_list || [])}
                     </div>
@@ -905,6 +1074,7 @@ function App() {
   };
 
   const isStaff = currentUser && (currentUser.role === 'Admin' || currentUser.role === 'Cán bộ xếp lịch');
+  const isAdmin = currentUser && currentUser.role === 'Admin';
 
   return (
     <ConfigProvider
@@ -941,7 +1111,7 @@ function App() {
               zIndex: 100,
             }} role="banner">
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '22px' }}>🎓</span>
+                <BookOutlined style={{ fontSize: '20px', color: 'white' }} />
                 <span style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-0.3px' }}>
                   Quản lý Phân công TKB
                 </span>
@@ -1011,14 +1181,21 @@ function App() {
                   {isStaff && (
                     <>
                       <SidebarSection title="Quản lý Dữ liệu" />
-                      <SidebarLink to="/subjects" icon={<BookOutlined />}>Môn học</SidebarLink>
+                      <SidebarLink to="/subjects" icon={<BookOutlined />}>Học phần</SidebarLink>
                       <SidebarLink to="/lecturers" icon={<TeamOutlined />}>Giảng viên</SidebarLink>
-                      <SidebarLink to="/curriculum" icon={<AppstoreOutlined />}>Chương trình Đào tạo</SidebarLink>
-                      <SidebarLink to="/classes" icon={<BankOutlined />}>Lớp Cố định</SidebarLink>
+                      <SidebarLink to="/curriculum" icon={<AppstoreOutlined />}>Chương trình đào tạo</SidebarLink>
+                      <SidebarLink to="/classes" icon={<BankOutlined />}>Lớp học</SidebarLink>
 
                       <SidebarSection title="Phân công TKB" />
                       <SidebarLink to="/timetable" icon={<CalendarOutlined />}>Workspace TKB</SidebarLink>
                       <SidebarLink to="/registrations" icon={<FormOutlined />}>Nguyện vọng Giảng dạy</SidebarLink>
+                    </>
+                  )}
+
+                  {isAdmin && (
+                    <>
+                      <SidebarSection title="Hệ thống" />
+                      <SidebarLink to="/users" icon={<SettingOutlined />}>Quản lý Tài khoản</SidebarLink>
                     </>
                   )}
 
@@ -1053,6 +1230,9 @@ function App() {
                       <Route path="/classes" element={<ClassesPage />} />
                       <Route path="/timetable" element={<TimetableCenterPage />} />
                     </>
+                  )}
+                  {isAdmin && (
+                    <Route path="/users" element={<UsersPage />} />
                   )}
                   <Route path="/registrations" element={<RegistrationsPage />} />
                   <Route path="/my-registrations" element={<LecturerPortalPage />} />

@@ -1,0 +1,14 @@
+I) Cấu trúc bài thuyết trình (Slide và Lời nói)
+1. Mở đầu (1 phút): Giới thiệu ngắn gọn bản thân, tên đề tài và lý do/mục đích chọn đề tài.
+
+2. Cơ sở lý thuyết (1-2 phút): Tóm tắt nhanh lý thuyết nền tảng. Không sa đà vào định nghĩa mà chỉ nêu các mô hình, công nghệ chính bạn áp dụng.
+
+3. Nội dung giải quyết vấn đề (4-5 phút): Phần quan trọng nhất. Trình bày phương pháp nghiên cứu, quy trình thực hiện, các bước phân tích, tính toán hoặc thiết kế của bạn.
+
+4. Kết quả đạt được (2 phút): Trình bày sản phẩm cuối cùng, mô hình chạy thử, các số liệu minh chứng hoặc kết quả thực nghiệm.
+
+5. Kết luận & Hướng phát triển (1 phút): Đúc kết lại ưu/nhược điểm của đồ án, nêu bật giá trị thực tiễn và định hướng nâng cấp trong tương lai.
+
+II) Thiết kế Slide chuyên nghiệp
+1. Tối giản văn bản: Sử dụng gạch đầu dòng ngắn gọn (keyword). Đưa tối đa hình ảnh, biểu đồ, sơ đồ khối để minh họa.
+

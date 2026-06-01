@@ -49,9 +49,11 @@ flowchart LR
     end
 
     admin --> UC_Auth & UC_MasterData
-    scheduler --> UC_Auth & UC_MasterData & UC_Curriculum & UC_RegList & UC_Schedule & UC_AutoAssign & UC_Excel
+    scheduler --> UC_MasterData & UC_Register & UC_Curriculum & UC_RegList & UC_Schedule & UC_AutoAssign & UC_Excel
     lecturer --> UC_Auth & UC_Register
 ```
+
+Sơ đồ Use Case tổng quát mô tả toàn diện các chức năng chính trong hệ thống lập kế hoạch và phân công giảng dạy cho Khoa Công nghệ Thông tin – Trường Đại học Đại Nam. Hệ thống bao gồm ba tác nhân chính: Admin, Giảng viên và Cán bộ xếp lịch, mỗi tác nhân tương tác với hệ thống thông qua các chức năng riêng biệt phù hợp với vai trò và quyền hạn của mình. Giảng viên có thể thực hiện xác thực tài khoản và đăng ký nguyện vọng giảng dạy các môn học lý thuyết hoặc thực hành theo từng học kỳ. Cán bộ xếp lịch là tác nhân trung tâm vận hành hệ thống, chịu trách nhiệm quản lý dữ liệu danh mục giảng viên, môn học, lớp học cố định; quản lý chương trình và khung chương trình đào tạo; tổ chức và quản lý các đợt đăng ký nguyện vọng của giảng viên; thực hiện xếp lịch và phân công giảng dạy thủ công trên không gian làm việc trực quan (Workspace); kích hoạt động cơ tự động phân công giảng dạy (Auto Assign) dựa trên thuật toán Thỏa mãn Ràng buộc (CSP); và thực hiện nhập/xuất dữ liệu thời khóa biểu ra tệp tin Excel. Quản trị viên (Admin) có quyền xác thực, quản lý tài khoản người dùng và quản lý dữ liệu danh mục nền tảng để đảm bảo sự vận hành ổn định của hệ thống.
 
 ---
 

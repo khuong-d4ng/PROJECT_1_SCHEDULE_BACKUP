@@ -33,7 +33,7 @@ const SubjectsPage: React.FC = () => {
       const response = await apiClient.get('/subjects/');
       setSubjects(response.data);
     } catch {
-      message.error('Không thể tải danh sách môn học. Vui lòng thử lại.');
+      message.error('Không thể tải danh sách học phần. Vui lòng thử lại.');
     } finally {
       setLoading(false);
     }
@@ -52,12 +52,12 @@ const SubjectsPage: React.FC = () => {
         practice_hours: (values.practice_credits || 0) * 15
       };
       await apiClient.post('/subjects/', payload);
-      message.success('Thêm môn học thành công');
+      message.success('Thêm học phần thành công');
       setIsModalOpen(false);
       form.resetFields();
       fetchSubjects();
     } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Lỗi khi thêm môn học. Vui lòng kiểm tra lại.');
+      message.error(error.response?.data?.detail || 'Lỗi khi thêm học phần. Vui lòng kiểm tra lại.');
     } finally {
       setSubmitting(false);
     }
@@ -73,7 +73,7 @@ const SubjectsPage: React.FC = () => {
     
     Modal.confirm({
       title: 'Xác nhận lưu thay đổi?',
-      content: 'Thông tin môn học sẽ được cập nhật trên toàn hệ thống.',
+      content: 'Thông tin học phần sẽ được cập nhật trên toàn hệ thống.',
       okText: 'Lưu',
       cancelText: 'Hủy',
       onOk: async () => {
@@ -85,11 +85,11 @@ const SubjectsPage: React.FC = () => {
             practice_hours: (values.practice_credits || 0) * 15
           };
           await apiClient.put(`/subjects/${selectedSubject.subject_id}`, payload);
-          message.success('Cập nhật môn học thành công');
+          message.success('Cập nhật học phần thành công');
           setDrawerOpen(false);
           fetchSubjects();
         } catch (error: any) {
-          message.error(error.response?.data?.detail || 'Lỗi khi cập nhật môn học.');
+          message.error(error.response?.data?.detail || 'Lỗi khi cập nhật học phần.');
         } finally {
           setSubmitting(false);
         }
@@ -109,7 +109,7 @@ const SubjectsPage: React.FC = () => {
       sorter: (a: Subject, b: Subject) => (a.subject_code || '').localeCompare(b.subject_code || '')
     },
     { 
-      title: 'Tên môn học', dataIndex: 'subject_name', ellipsis: true,
+      title: 'Tên học phần', dataIndex: 'subject_name', ellipsis: true,
       sorter: (a: Subject, b: Subject) => (a.subject_name || '').localeCompare(b.subject_name || '')
     },
     { 
@@ -135,11 +135,11 @@ const SubjectsPage: React.FC = () => {
       {/* Header */}
       <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--color-border-light)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Danh sách Môn học</h2>
-          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{filteredSubjects.length} môn học</span>
+          <h2 style={{ fontSize: '18px', fontWeight: 700, margin: 0, color: 'var(--color-text)' }}>Danh sách Học phần</h2>
+          <span style={{ fontSize: '13px', color: 'var(--color-text-muted)' }}>{filteredSubjects.length} học phần</span>
         </div>
         <Button type="primary" icon={<PlusOutlined />} onClick={() => setIsModalOpen(true)}>
-          Thêm Môn học
+          Thêm Học phần
         </Button>
       </div>
 
@@ -147,7 +147,7 @@ const SubjectsPage: React.FC = () => {
       <div style={{ padding: '12px 24px', borderBottom: '1px solid var(--color-border-light)' }}>
         <Input
           prefix={<SearchOutlined style={{ color: 'var(--color-text-muted)' }} />}
-          placeholder="Tìm theo mã hoặc tên môn học…"
+          placeholder="Tìm theo mã hoặc tên học phần…"
           allowClear
           value={searchText}
           onChange={e => setSearchText(e.target.value)}
@@ -167,7 +167,7 @@ const SubjectsPage: React.FC = () => {
           pagination={{ pageSize: 15, showSizeChanger: false, showTotal: (total) => `${total} kết quả` }}
           scroll={{ y: 500 }}
           size="middle"
-          locale={{ emptyText: <Empty description="Chưa có môn học nào" /> }}
+          locale={{ emptyText: <Empty description="Chưa có học phần nào" /> }}
           showSorterTooltip={false}
           onRow={(record) => ({
             onClick: () => openProfile(record),
@@ -179,19 +179,19 @@ const SubjectsPage: React.FC = () => {
 
       {/* Add Modal */}
       <Modal
-        title="Thêm Môn học Mới"
+        title="Thêm Học phần Mới"
         open={isModalOpen}
         onCancel={() => { setIsModalOpen(false); form.resetFields(); }}
         onOk={() => form.submit()}
         confirmLoading={submitting}
-        okText="Lưu Môn học"
+        okText="Lưu Học phần"
         cancelText="Hủy"
       >
         <Form form={form} layout="vertical" onFinish={handleAdd}>
           <Form.Item name="subject_code" label="Mã học phần" rules={[{ required: true, message: 'Vui lòng nhập mã học phần' }]}>
             <Input placeholder="VD: FIT4001…" name="subject_code" autoComplete="off" spellCheck={false} />
           </Form.Item>
-          <Form.Item name="subject_name" label="Tên môn học" rules={[{ required: true, message: 'Vui lòng nhập tên môn học' }]}>
+          <Form.Item name="subject_name" label="Tên học phần" rules={[{ required: true, message: 'Vui lòng nhập tên học phần' }]}>
             <Input placeholder="VD: Nhập môn Công nghệ Thông tin…" name="subject_name" autoComplete="off" />
           </Form.Item>
           <div style={{ display: 'flex', gap: '16px' }}>
@@ -215,7 +215,7 @@ const SubjectsPage: React.FC = () => {
       <Drawer
         title={
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingRight: 20 }}>
-            <span><BookOutlined /> Chi tiết Môn học</span>
+            <span><BookOutlined /> Chi tiết Học phần</span>
             <Space>
               <Button icon={<CloseOutlined />} onClick={() => setDrawerOpen(false)} size="small" type="text" />
             </Space>
@@ -244,8 +244,8 @@ const SubjectsPage: React.FC = () => {
               </Form.Item>
             </div>
 
-            <Form.Item name="subject_name" label="Tên môn học" rules={[{ required: true }]}>
-              <Input placeholder="Tên môn học" />
+            <Form.Item name="subject_name" label="Tên học phần" rules={[{ required: true }]}>
+              <Input placeholder="Tên học phần" />
             </Form.Item>
 
             <div style={{ display: 'flex', gap: '16px' }}>
@@ -270,7 +270,7 @@ const SubjectsPage: React.FC = () => {
             </Descriptions>
 
             <div style={{ marginTop: '24px', padding: '12px', background: 'var(--color-warning-bg)', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-warning)', color: 'var(--color-warning)', fontSize: '12px' }}>
-              <strong>Lưu ý:</strong> Thay đổi thông tin môn học sẽ ảnh hưởng đến tất cả các bảng dữ liệu liên quan (Khung chương trình, Đăng ký giảng dạy, v.v.)
+              <strong>Lưu ý:</strong> Thay đổi thông tin học phần sẽ ảnh hưởng đến tất cả các bảng dữ liệu liên quan (Khung chương trình, Đăng ký giảng dạy, v.v.)
             </div>
           </Form>
         )}

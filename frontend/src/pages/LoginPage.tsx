@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Button, Input, Form, message } from 'antd';
-import { LockOutlined, UserOutlined } from '@ant-design/icons';
+import { LockOutlined, UserOutlined, ReadOutlined } from '@ant-design/icons';
 import apiClient from '../api/client';
 
 interface LoginPageProps {
@@ -50,7 +50,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             margin: '0 auto 16px', fontSize: '28px', boxShadow: '0 8px 24px rgba(243, 116, 35, 0.3)',
           }}>
-            🎓
+            <ReadOutlined style={{ color: 'white', fontSize: '32px' }} />
           </div>
           <h1 style={{
             fontSize: '22px', fontWeight: 800, color: '#1a1a2e', margin: 0,

@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Button, Table, Modal,
   Input, Select, Space, Card, message, Steps, Row, Col,
-  Progress, Tag, Tooltip, DatePicker
+  Progress, Tag, Tooltip, DatePicker, Tabs
 } from 'antd';
 const { CheckableTag } = Tag;
 import {
   PlusOutlined, EyeOutlined, CalendarOutlined,
   ThunderboltOutlined, SearchOutlined, DeleteOutlined, DownloadOutlined,
-  SortAscendingOutlined, SortDescendingOutlined
+  SortAscendingOutlined, SortDescendingOutlined, LeftOutlined, RightOutlined
 } from '@ant-design/icons';
 import apiClient from '../api/client';
 import dayjs from 'dayjs';
@@ -56,9 +56,9 @@ const DraggableLecturerCard = ({ lecturer, stats }: { lecturer: any; stats: LecS
         </Tooltip>
       </div>
       <div className="flex justify-between text-[10px] text-slate-500">
-        <span title="Số môn dạy">📚 {subjects} môn</span>
-        <span title="Số lớp dạy">🏫 {classes} lớp</span>
-        <span title="Số buổi/tuần">📅 {slots}/14</span>
+        <span title="Số học phần dạy">Học phần: {subjects}</span>
+        <span title="Số lớp dạy">Lớp: {classes}</span>
+        <span title="Số buổi/tuần">Buổi: {slots}/14</span>
       </div>
     </div>
   );
@@ -97,6 +97,7 @@ export default function TimetableCenterPage() {
   const [poolRoleFilter, setPoolRoleFilter] = useState<string>('all'); // 'all' | 'LT' | 'TH'
   const [poolSortAsc, setPoolSortAsc] = useState(true);
   const [activeLecturer, setActiveLecturer] = useState<any>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Preference map: subject_id -> {main: [lec_ids], prac: [lec_ids]}
   const [prefMap, setPrefMap] = useState<Record<string, { main: number[], prac: number[] }>>({});
@@ -130,6 +131,7 @@ export default function TimetableCenterPage() {
   const [dateModalSessionName, setDateModalSessionName] = useState<string>('');
   const [dateModalSessionDesc, setDateModalSessionDesc] = useState<string>('');
   const [startDateVal, setStartDateVal] = useState<dayjs.Dayjs | null>(null);
+  const [dateModalRegListId, setDateModalRegListId] = useState<number | null>(null);
   const [dateModalLoading, setDateModalLoading] = useState(false);
 
   const handleOpenDateModal = (session: any) => {
@@ -137,6 +139,7 @@ export default function TimetableCenterPage() {
     setDateModalSessionName(session.plan_name);
     setStartDateVal(session.start_date ? dayjs(session.start_date) : null);
     setDateModalSessionDesc(session.description || '');
+    setDateModalRegListId(session.registration_list_id || null);
     setIsDateModalOpen(true);
   };
 
@@ -154,10 +157,11 @@ export default function TimetableCenterPage() {
       const formatted = startDateVal.format('YYYY-MM-DD');
       // Update dates
       await apiClient.put(`/timetables/${dateModalSessionId}/dates`, { start_date: formatted });
-      // Update info (name & description)
+      // Update info (name, description, & registration_list_id)
       await apiClient.put(`/timetables/${dateModalSessionId}/info`, {
         plan_name: dateModalSessionName,
-        description: dateModalSessionDesc
+        description: dateModalSessionDesc,
+        registration_list_id: dateModalRegListId
       });
       message.success("Cấu hình đợt TKB thành công!");
       setIsDateModalOpen(false);
@@ -170,6 +174,32 @@ export default function TimetableCenterPage() {
     } finally {
       setDateModalLoading(false);
     }
+  };
+
+  const handleResetTimetable = () => {
+    Modal.confirm({
+      title: 'Reset Đợt Thời Khóa Biểu',
+      content: 'Thao tác này sẽ xóa toàn bộ giảng viên đã gán (cả giảng viên chính và thực hành) cùng với ca dạy của tất cả các dòng thuộc đợt này. Bạn có chắc chắn muốn tiếp tục?',
+      okText: 'Xác nhận Reset',
+      okButtonProps: { danger: true },
+      cancelText: 'Hủy',
+      onOk: async () => {
+        setDateModalLoading(true);
+        try {
+          await apiClient.post(`/timetables/${dateModalSessionId}/reset`);
+          message.success("Đã reset toàn bộ Giảng viên và Ca học thành trống!");
+          setIsDateModalOpen(false);
+          fetchSessions();
+          if (selectedSessionId === dateModalSessionId && dateModalSessionId !== null) {
+            loadSessionDetails(dateModalSessionId);
+          }
+        } catch (e: any) {
+          message.error(e.response?.data?.detail || "Lỗi khi reset TKB");
+        } finally {
+          setDateModalLoading(false);
+        }
+      }
+    });
   };
 
   // --- DATA LOADING ---
@@ -269,7 +299,7 @@ export default function TimetableCenterPage() {
         entries: payloadEntries
       });
 
-      message.success("Tạo Đợt TKB và Gen dữ liệu Lớp-Môn thành công!");
+      message.success("Tạo Đợt TKB và Gen dữ liệu Lớp-Học phần thành công!");
       setIsWizardOpen(false);
       setCurrentStep(0);
       setWizardConfig({ plan_name: "", registration_list_id: null, program_ids: [], description: "" });
@@ -417,11 +447,11 @@ export default function TimetableCenterPage() {
       render: (val, record) => (
         <Select size="small" style={{ width: '100%' }} value={val} allowClear placeholder="Chọn"
           onChange={v => handleRowChange(record.row_id, 'fixed_shift', v)}
-          options={[{ value: 'Sáng', label: '☀️ Sáng' }, { value: 'Chiều', label: '🌙 Chiều' }]} />
+          options={[{ value: 'Sáng', label: 'Sáng' }, { value: 'Chiều', label: 'Chiều' }]} />
       )
     },
     {
-      title: 'Mã Môn', dataIndex: 'subject_code', width: 90,
+      title: 'Mã Học phần', dataIndex: 'subject_code', width: 90,
       sorter: (a, b) => (a.subject_code || '').localeCompare(b.subject_code || '')
     },
     {
@@ -592,7 +622,7 @@ export default function TimetableCenterPage() {
 
     return (
       <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div style={{ display: 'flex', height: '100%', background: 'var(--color-bg)' }}>
+        <div style={{ display: 'flex', height: 'calc(100vh - 100px)', background: 'var(--color-bg)', position: 'relative' }}>
           {/* LEFT: Main Table */}
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Toolbar */}
@@ -621,7 +651,7 @@ export default function TimetableCenterPage() {
               <Space>
                 <Tooltip title="Xuất file Excel TKB">
                   <Button icon={<DownloadOutlined />} onClick={handleExport} aria-label="Xuất file Excel">
-                    Export Excel
+                    Xuất ra Excel
                   </Button>
                 </Tooltip>
                 <Button
@@ -629,7 +659,7 @@ export default function TimetableCenterPage() {
                   icon={<ThunderboltOutlined />}
                   onClick={() => setIsAutoAssignModalOpen(true)}
                 >
-                  ⚡ Auto-Assign
+                  Tự động phân công
                 </Button>
               </Space>
             </div>
@@ -672,79 +702,119 @@ export default function TimetableCenterPage() {
           </div>
 
           {/* RIGHT: Sidebar Pool GV */}
-          <div style={{ width: '300px', background: 'var(--color-white)', borderLeft: '1px solid var(--color-border)', display: 'flex', flexDirection: 'column', boxShadow: '-2px 0 8px rgba(0,0,0,0.04)', height: '100%', overflow: 'hidden' }}>
-            {/* Header */}
-            <div style={{ padding: '12px', borderBottom: '1px solid var(--color-border-light)', background: 'var(--color-bg)', flexShrink: 0 }}>
-              {focusedSubjectId ? (
-                <>
-                  <div style={{ fontWeight: 700, color: 'var(--color-success)', marginBottom: '4px', fontSize: '13px' }}>✅ GV có thể dạy:</div>
-                  <div style={{ fontSize: '12px', color: 'var(--color-success)', background: 'var(--color-success-bg)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', marginBottom: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={focusedSubjectName || ''}>
-                    {focusedSubjectName}
-                  </div>
-                  <Button size="small" type="link" className="p-0 text-xs" onClick={() => setFocusedSubjectId(null)}>
-                    ← Xem tất cả GV
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                    <span style={{ fontWeight: 700, color: 'var(--color-text)', fontSize: '13px' }}>Danh sách Giảng Viên</span>
-                    <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{sortedLecs.length}/{lecturers.length}</span>
-                  </div>
-                  <Input
-                    prefix={<SearchOutlined style={{ color: 'var(--color-text-muted)' }} />}
-                    placeholder="Tìm tên hoặc mã GV…"
-                    size="small"
-                    allowClear
-                    value={lecSearch}
-                    onChange={e => setLecSearch(e.target.value)}
-                    style={{ marginBottom: '8px' }}
-                  />
-                  {/* Filter Row 1: Employment Type */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px', flexWrap: 'wrap' }}>
-                    <CheckableTag checked={poolTypeFilter === 'all'} onChange={() => setPoolTypeFilter('all')}
-                      style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'all' ? 'none' : '1px solid var(--color-border)' }}>Tất cả</CheckableTag>
-                    <CheckableTag checked={poolTypeFilter === 'Cơ hữu'} onChange={() => setPoolTypeFilter(poolTypeFilter === 'Cơ hữu' ? 'all' : 'Cơ hữu')}
-                      style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'Cơ hữu' ? 'none' : '1px solid var(--color-border)' }}>Cơ hữu</CheckableTag>
-                    <CheckableTag checked={poolTypeFilter === 'Thỉnh giảng'} onChange={() => setPoolTypeFilter(poolTypeFilter === 'Thỉnh giảng' ? 'all' : 'Thỉnh giảng')}
-                      style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'Thỉnh giảng' ? 'none' : '1px solid var(--color-border)' }}>Thỉnh giảng</CheckableTag>
-                  </div>
-                  {/* Filter Row 2: LT/TH Role + Sort */}
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <CheckableTag checked={poolRoleFilter === 'LT'} onChange={() => setPoolRoleFilter(poolRoleFilter === 'LT' ? 'all' : 'LT')}
-                        style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolRoleFilter === 'LT' ? 'none' : '1px solid var(--color-border)' }}>Lý thuyết</CheckableTag>
-                      <CheckableTag checked={poolRoleFilter === 'TH'} onChange={() => setPoolRoleFilter(poolRoleFilter === 'TH' ? 'all' : 'TH')}
-                        style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolRoleFilter === 'TH' ? 'none' : '1px solid var(--color-border)' }}>Thực hành</CheckableTag>
-                    </div>
-                    <Tooltip title={poolSortAsc ? 'Ít tiết → Nhiều tiết' : 'Nhiều tiết → Ít tiết'}>
-                      <Button
-                        size="small"
-                        type="text"
-                        icon={poolSortAsc ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
-                        onClick={() => setPoolSortAsc(!poolSortAsc)}
-                        style={{ fontSize: '14px', color: 'var(--color-accent)' }}
-                      />
-                    </Tooltip>
-                  </div>
-                  <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
-                    👉 Click 1 dòng TKB để lọc GV phù hợp
-                  </div>
-                </>
-              )}
+          <div style={{ position: 'relative', flexShrink: 0 }}>
+            {/* Collapse toggle button */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '-12px',
+              transform: 'translateY(-50%)',
+              zIndex: 10,
+            }}>
+              <Button
+                shape="circle"
+                size="small"
+                icon={sidebarCollapsed ? <LeftOutlined /> : <RightOutlined />}
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+                style={{
+                  border: '1px solid var(--color-border)',
+                  boxShadow: 'var(--shadow-sm)',
+                  background: 'var(--color-white)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer'
+                }}
+              />
             </div>
-            {/* Scrollable List */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }} className="custom-scrollbar">
-              {sortedLecs.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>Không có giảng viên phù hợp</div>
-              )}
-              {sortedLecs.map(lec => (
-                <DraggableLecturerCard
-                  key={lec.lecturer_id}
-                  lecturer={lec}
-                  stats={statsMap[String(lec.lecturer_id)] || { hours: 0, subjects: 0, classes: 0, slots: 0 }}
-                />
-              ))}
+
+            {/* Sliding container */}
+            <div style={{
+              width: sidebarCollapsed ? '0px' : '300px',
+              overflow: 'hidden',
+              transition: 'width 0.2s ease-in-out',
+              background: 'var(--color-white)',
+              borderLeft: sidebarCollapsed ? 'none' : '1px solid var(--color-border)',
+              height: '100%',
+              display: 'flex',
+              flexDirection: 'column',
+              boxShadow: sidebarCollapsed ? 'none' : '-2px 0 8px rgba(0,0,0,0.04)'
+            }}>
+              <div style={{ width: '300px', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+                {/* Header */}
+                <div style={{ padding: '12px', borderBottom: '1px solid var(--color-border-light)', background: 'var(--color-bg)', flexShrink: 0 }}>
+                  {focusedSubjectId ? (
+                    <>
+                      <div style={{ fontWeight: 700, color: 'var(--color-success)', marginBottom: '4px', fontSize: '13px' }}>GV có thể dạy:</div>
+                      <div style={{ fontSize: '12px', color: 'var(--color-success)', background: 'var(--color-success-bg)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', marginBottom: '8px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={focusedSubjectName || ''}>
+                        {focusedSubjectName}
+                      </div>
+                      <Button size="small" type="link" className="p-0 text-xs" onClick={() => setFocusedSubjectId(null)}>
+                        ← Xem tất cả GV
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                        <span style={{ fontWeight: 700, color: 'var(--color-text)', fontSize: '13px' }}>Danh sách Giảng Viên</span>
+                        <span style={{ fontSize: '11px', color: 'var(--color-text-muted)' }}>{sortedLecs.length}/{lecturers.length}</span>
+                      </div>
+                      <Input
+                        prefix={<SearchOutlined style={{ color: 'var(--color-text-muted)' }} />}
+                        placeholder="Tìm tên hoặc mã GV…"
+                        size="small"
+                        allowClear
+                        value={lecSearch}
+                        onChange={e => setLecSearch(e.target.value)}
+                        style={{ marginBottom: '8px' }}
+                      />
+                      {/* Filter Row 1: Employment Type */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <CheckableTag checked={poolTypeFilter === 'all'} onChange={() => setPoolTypeFilter('all')}
+                          style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'all' ? 'none' : '1px solid var(--color-border)' }}>Tất cả</CheckableTag>
+                        <CheckableTag checked={poolTypeFilter === 'Cơ hữu'} onChange={() => setPoolTypeFilter(poolTypeFilter === 'Cơ hữu' ? 'all' : 'Cơ hữu')}
+                          style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'Cơ hữu' ? 'none' : '1px solid var(--color-border)' }}>Cơ hữu</CheckableTag>
+                        <CheckableTag checked={poolTypeFilter === 'Thỉnh giảng'} onChange={() => setPoolTypeFilter(poolTypeFilter === 'Thỉnh giảng' ? 'all' : 'Thỉnh giảng')}
+                          style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolTypeFilter === 'Thỉnh giảng' ? 'none' : '1px solid var(--color-border)' }}>Thỉnh giảng</CheckableTag>
+                      </div>
+                      {/* Filter Row 2: LT/TH Role + Sort */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', gap: '4px' }}>
+                          <CheckableTag checked={poolRoleFilter === 'LT'} onChange={() => setPoolRoleFilter(poolRoleFilter === 'LT' ? 'all' : 'LT')}
+                            style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolRoleFilter === 'LT' ? 'none' : '1px solid var(--color-border)' }}>Lý thuyết</CheckableTag>
+                          <CheckableTag checked={poolRoleFilter === 'TH'} onChange={() => setPoolRoleFilter(poolRoleFilter === 'TH' ? 'all' : 'TH')}
+                            style={{ fontSize: '11px', borderRadius: '10px', padding: '1px 8px', border: poolRoleFilter === 'TH' ? 'none' : '1px solid var(--color-border)' }}>Thực hành</CheckableTag>
+                        </div>
+                        <Tooltip title={poolSortAsc ? 'Ít tiết → Nhiều tiết' : 'Nhiều tiết → Ít tiết'}>
+                          <Button
+                            size="small"
+                            type="text"
+                            icon={poolSortAsc ? <SortAscendingOutlined /> : <SortDescendingOutlined />}
+                            onClick={() => setPoolSortAsc(!poolSortAsc)}
+                            style={{ fontSize: '14px', color: 'var(--color-accent)' }}
+                          />
+                        </Tooltip>
+                      </div>
+                      <div style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-muted)', fontStyle: 'italic' }}>
+                        Chọn 1 dòng TKB để lọc GV phù hợp
+                      </div>
+                    </>
+                  )}
+                </div>
+                {/* Scrollable List */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '8px' }} className="custom-scrollbar">
+                  {sortedLecs.length === 0 && (
+                    <div style={{ textAlign: 'center', padding: '24px', color: 'var(--color-text-muted)', fontSize: '12px' }}>Không có giảng viên phù hợp</div>
+                  )}
+                  {sortedLecs.map(lec => (
+                    <DraggableLecturerCard
+                      key={lec.lecturer_id}
+                      lecturer={lec}
+                      stats={statsMap[String(lec.lecturer_id)] || { hours: 0, subjects: 0, classes: 0, slots: 0 }}
+                    />
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -755,7 +825,7 @@ export default function TimetableCenterPage() {
 
         {/* AUTO-ASSIGN MODAL */}
         <Modal
-          title="⚡ Phân Công Giảng Viên Tự Động"
+          title="Phân Công Giảng Viên Tự Động"
           open={isAutoAssignModalOpen}
           onCancel={() => setIsAutoAssignModalOpen(false)}
           onOk={handleAutoAssign}
@@ -774,8 +844,8 @@ export default function TimetableCenterPage() {
                 value={autoAssignStrategy}
                 onChange={setAutoAssignStrategy}
                 options={[
-                  { value: 'A', label: '🎯 Bão hòa (Saturation) — Dồn đủ 160 tiết/GV rồi mới chuyển sang GV tiếp theo' },
-                  { value: 'B', label: '⚖️ San đều (Load Balancing) — Chia đều tiết cho tất cả GV' }
+                  { value: 'A', label: 'Bão hòa (Saturation) — Dồn đủ 160 tiết/GV rồi mới chuyển sang GV tiếp theo' },
+                  { value: 'B', label: 'San đều (Load Balancing) — Chia đều tiết cho tất cả GV' }
                 ]}
               />
             </div>
@@ -784,40 +854,107 @@ export default function TimetableCenterPage() {
 
         {/* RESULT MODAL */}
         <Modal
-          title="📊 Kết Quả Phân Công Tự Động"
+          title="Kết Quả Phân Công Tự Động"
           open={isResultModalOpen}
           onCancel={() => setIsResultModalOpen(false)}
           footer={<Button type="primary" onClick={() => setIsResultModalOpen(false)}>Đóng</Button>}
           width={700}
         >
-          {autoAssignResult && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
-                  <div className="text-3xl font-bold text-green-600">{autoAssignResult.assigned_count}</div>
-                  <div className="text-sm text-green-700 mt-1">Đã phân công</div>
-                </div>
-                <div className="bg-red-50 p-4 rounded-lg border border-red-200 text-center">
-                  <div className="text-3xl font-bold text-red-500">{autoAssignResult.unassigned_count}</div>
-                  <div className="text-sm text-red-700 mt-1">Không thể gán</div>
-                </div>
-                <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center">
-                  <div className="text-3xl font-bold text-blue-600">{autoAssignResult.slot_assigned_count}</div>
-                  <div className="text-sm text-blue-700 mt-1">Slot đã xếp</div>
-                </div>
-              </div>
-              {autoAssignResult.warnings?.length > 0 && (
-                <div>
-                  <div className="font-semibold mb-2 text-amber-700">⚠️ Cảnh báo ({autoAssignResult.warnings.length}):</div>
-                  <div className="max-h-60 overflow-y-auto bg-amber-50 p-3 rounded border border-amber-200 space-y-1">
-                    {autoAssignResult.warnings.map((w: string, i: number) => (
-                      <div key={i} className="text-sm text-amber-800">{w}</div>
-                    ))}
+          {autoAssignResult && (() => {
+            const warnings = autoAssignResult.warnings || [];
+            
+            // Phân loại cảnh báo dựa trên từ khóa
+            const noRegWarnings = warnings.filter((w: string) => w.includes("không có GV đăng ký"));
+            const noLecAvailableWarnings = warnings.filter((w: string) => w.includes("Hết giảng viên chính khả dụng"));
+            const overloadWarnings = warnings.filter((w: string) => 
+              !w.includes("không có GV đăng ký") && !w.includes("Hết giảng viên chính khả dụng")
+            );
+
+            return (
+              <div className="space-y-4">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
+                    <div className="text-3xl font-bold text-green-600">{autoAssignResult.assigned_count}</div>
+                    <div className="text-sm text-green-700 mt-1">Đã phân công</div>
+                  </div>
+                  <div className="bg-red-50 p-4 rounded-lg border border-red-200 text-center">
+                    <div className="text-3xl font-bold text-red-500">{autoAssignResult.unassigned_count}</div>
+                    <div className="text-sm text-red-700 mt-1">Không thể gán</div>
+                  </div>
+                  <div className="bg-blue-50 p-4 rounded-lg border border-blue-200 text-center">
+                    <div className="text-3xl font-bold text-blue-600">{autoAssignResult.slot_assigned_count}</div>
+                    <div className="text-sm text-blue-700 mt-1">Slot đã xếp</div>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+                {warnings.length > 0 && (
+                  <div>
+                    <div className="font-semibold mb-3 text-amber-800">Danh sách cảnh báo chi tiết ({warnings.length}):</div>
+                    <Tabs
+                      defaultActiveKey="1"
+                      type="card"
+                      size="small"
+                      items={[
+                        {
+                          key: '1',
+                          label: `Hết GV khả dụng (${noLecAvailableWarnings.length})`,
+                          children: (
+                            <div className="max-h-60 overflow-y-auto bg-red-50 p-3 rounded border border-red-100 space-y-1 custom-scrollbar">
+                              {noLecAvailableWarnings.length > 0 ? (
+                                noLecAvailableWarnings.map((w: string, i: number) => (
+                                  <div key={i} className="text-sm text-red-800 flex items-start gap-1">
+                                    <span>❌</span>
+                                    <span>{w.replace('❌', '').trim()}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-sm text-gray-400 italic py-4 text-center">Không có cảnh báo nào</div>
+                              )}
+                            </div>
+                          ),
+                        },
+                        {
+                          key: '2',
+                          label: `Môn chưa có đăng ký dạy (${noRegWarnings.length})`,
+                          children: (
+                            <div className="max-h-60 overflow-y-auto bg-amber-50 p-3 rounded border border-amber-100 space-y-1 custom-scrollbar">
+                              {noRegWarnings.length > 0 ? (
+                                noRegWarnings.map((w: string, i: number) => (
+                                  <div key={i} className="text-sm text-amber-800 flex items-start gap-1">
+                                    <span>⚠️</span>
+                                    <span>{w.replace('⚠️', '').trim()}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-sm text-gray-400 italic py-4 text-center">Không có cảnh báo nào</div>
+                              )}
+                            </div>
+                          ),
+                        },
+                        {
+                          key: '3',
+                          label: `Cảnh báo quá tải (${overloadWarnings.length})`,
+                          children: (
+                            <div className="max-h-60 overflow-y-auto bg-orange-50/50 p-3 rounded border border-orange-100 space-y-1 custom-scrollbar">
+                              {overloadWarnings.length > 0 ? (
+                                overloadWarnings.map((w: string, i: number) => (
+                                  <div key={i} className="text-sm text-orange-800 flex items-start gap-1">
+                                    <span>⚠️</span>
+                                    <span>{w.replace('⚠️', '').trim()}</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="text-sm text-gray-400 italic py-4 text-center">Không có cảnh báo nào</div>
+                              )}
+                            </div>
+                          ),
+                        },
+                      ]}
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </Modal>
       </DndContext>
     );
@@ -935,7 +1072,7 @@ export default function TimetableCenterPage() {
         {currentStep === 1 && (
           <div className="space-y-6">
             <div className="bg-yellow-50 p-3 rounded text-sm text-yellow-800 border border-yellow-200">
-              Hệ thống sẽ dựa vào cấu hình dưới đây để nhân chéo với DB (Lấy các lớp của khóa tương ứng, lấy các môn của học kì đó) và tự sinh (auto-gen) ra một cấu trúc Mảng y hệt file Excel.
+              Hệ thống sẽ dựa vào cấu hình dưới đây để nhân chéo với DB (Lấy các lớp của khóa tương ứng, lấy các học phần của học kì đó) và tự sinh (auto-gen) ra một cấu trúc Mảng y hệt file Excel.
             </div>
 
             {wizardConfig.program_ids.map(p_id => {
@@ -965,7 +1102,7 @@ export default function TimetableCenterPage() {
 
             <div className="flex justify-between mt-6">
               <Button onClick={() => setCurrentStep(0)}>← Quay lại</Button>
-              <Button type="primary" onClick={handleGenerate}>Xác nhận Tạo cấu trúc Lớp & Môn →</Button>
+              <Button type="primary" onClick={handleGenerate}>Xác nhận Tạo cấu trúc Lớp & Học phần →</Button>
             </div>
           </div>
         )}
@@ -976,11 +1113,24 @@ export default function TimetableCenterPage() {
         title="Cấu hình Đợt TKB"
         open={isDateModalOpen}
         onCancel={() => setIsDateModalOpen(false)}
-        onOk={handleSaveSessionDate}
-        confirmLoading={dateModalLoading}
-        okText="Lưu"
-        cancelText="Hủy"
         destroyOnClose
+        footer={[
+          <Button 
+            key="reset" 
+            danger 
+            type="primary" 
+            onClick={handleResetTimetable}
+            style={{ float: 'left' }}
+          >
+            Reset Đợt TKB (Xóa hết GV)
+          </Button>,
+          <Button key="back" onClick={() => setIsDateModalOpen(false)}>
+            Hủy
+          </Button>,
+          <Button key="submit" type="primary" loading={dateModalLoading} onClick={handleSaveSessionDate}>
+            Lưu
+          </Button>,
+        ]}
       >
         <div style={{ padding: '16px 0' }} className="space-y-4">
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1001,6 +1151,18 @@ export default function TimetableCenterPage() {
               rows={3}
             />
           </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontWeight: 600, color: '#374151', fontSize: '13.5px' }}>Nguồn Đăng Ký Nguyện Vọng:</span>
+            <Select
+              allowClear
+              className="w-full"
+              placeholder="Chọn Danh sách nguyện vọng giảng dạy (Không bắt buộc ngay)"
+              value={dateModalRegListId}
+              onChange={v => setDateModalRegListId(v)}
+              options={regLists.map(l => ({ label: l.list_name, value: l.list_id }))}
+            />
+          </div>
           
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <span style={{ fontWeight: 600, color: '#374151', fontSize: '13.5px' }}>Ngày bắt đầu (*):</span>
@@ -1014,7 +1176,7 @@ export default function TimetableCenterPage() {
           </div>
 
           <div style={{ background: '#eff6ff', border: '1px solid #dbeafe', color: '#1e40af', padding: '12px', borderRadius: '8px', fontSize: '13px' }}>
-            Chọn ngày bắt đầu cho đợt TKB. Hệ thống sẽ tự động gán ngày bắt đầu này cho toàn bộ các lớp môn học thuộc đợt, và tự động tính toán ngày kết thúc cho mỗi môn (mỗi tuần 1 buổi, tối đa 4 tiết).
+            Chọn ngày bắt đầu cho đợt TKB. Hệ thống sẽ tự động gán ngày bắt đầu này cho toàn bộ các lớp học phần thuộc đợt, và tự động tính toán ngày kết thúc cho mỗi học phần (mỗi tuần 1 buổi, tối đa 4 tiết).
           </div>
         </div>
       </Modal>

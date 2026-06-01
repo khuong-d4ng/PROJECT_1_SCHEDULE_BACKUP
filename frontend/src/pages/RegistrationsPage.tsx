@@ -169,10 +169,12 @@ const RegistrationsPage: React.FC = () => {
   // ---- DRAFT WIZARD MODAL ----
   const [draftWizardOpen, setDraftWizardOpen] = useState(false);
   const [draftWizardMode, setDraftWizardMode] = useState<'create' | 'edit_subjects'>('create');
-  const [draftWizardTab, setDraftWizardTab] = useState<'curriculum' | 'manual'>('curriculum');
+  const [draftWizardTab, setDraftWizardTab] = useState<'curriculum' | 'timetable' | 'manual'>('curriculum');
   const [subjectModalProgramIds, setSubjectModalProgramIds] = useState<number[]>([]);
   const [subjectModalEntries, setSubjectModalEntries] = useState<Record<number, number[]>>({});
   const [subjectModalManualIds, setSubjectModalManualIds] = useState<number[]>([]);
+  const [timetableSessions, setTimetableSessions] = useState<any[]>([]);
+  const [subjectModalTimetableId, setSubjectModalTimetableId] = useState<number | null>(null);
   const [loadingDraftWizard, setLoadingDraftWizard] = useState(false);
 
   // ---- LECTURER FILTER + SORT ----
@@ -182,16 +184,18 @@ const RegistrationsPage: React.FC = () => {
   // Load Initial Data
   const fetchBaseData = async () => {
     try {
-      const [resLists, resLecs, resSubs, resProgs] = await Promise.all([
+      const [resLists, resLecs, resSubs, resProgs, resTimetables] = await Promise.all([
         apiClient.get('/registrations/lists'),
         apiClient.get('/lecturers/'),
         apiClient.get('/subjects/'),
-        apiClient.get('/programs/')
+        apiClient.get('/programs/'),
+        apiClient.get('/timetables/')
       ]);
       setLists(resLists.data);
       setLecturers(resLecs.data);
       setSubjects(resSubs.data);
       setPrograms(resProgs.data);
+      setTimetableSessions(resTimetables.data);
     } catch {
       message.error("Lỗi tải dữ liệu nền");
     }
@@ -243,12 +247,20 @@ const RegistrationsPage: React.FC = () => {
           const resSubs = await apiClient.post('/registrations/curriculum-subjects', { selections });
           sids = resSubs.data.map((s: any) => s.subject_id);
         }
+      } else if (draftWizardTab === 'timetable') {
+        if (!subjectModalTimetableId) {
+          message.warning("Vui lòng chọn một đợt TKB");
+          setLoadingDraftWizard(false);
+          return;
+        }
+        const resRows = await apiClient.get(`/timetables/${subjectModalTimetableId}/rows`);
+        sids = Array.from(new Set(resRows.data.map((r: any) => r.subject_id as number)));
       } else {
         sids = subjectModalManualIds;
       }
 
       await apiClient.put(`/registrations/lists/${listId}/set-subjects`, { subject_ids: sids });
-      message.success(draftWizardMode === 'create' ? "Tạo phiên bản và gán môn thành công!" : `Đã gán ${sids.length} môn cho đợt đăng ký!`);
+      message.success(draftWizardMode === 'create' ? "Tạo phiên bản và gán học phần thành công!" : `Đã gán ${sids.length} học phần cho đợt đăng ký!`);
       
       // Update local state for list subjects immediately
       setListAvailableSubjectIds(new Set(sids));
@@ -434,7 +446,7 @@ const RegistrationsPage: React.FC = () => {
       }
       setFilteredSubjectIds(ids);
       setFilterPopoverOpen(false);
-      message.success(`Đã lọc: ${ids.size} môn học phù hợp`);
+      message.success(`Đã lọc: ${ids.size} học phần phù hợp`);
     } catch {
       message.error('Lỗi khi tải dữ liệu chương trình');
     } finally {
@@ -500,7 +512,7 @@ const RegistrationsPage: React.FC = () => {
       setFilteredSubjectIds(ids);
       setBatchFilterLabel(labelParts.join(' | '));
       setBatchModalOpen(false);
-      message.success(`Đã tạo đợt: ${ids.size} môn học`);
+      message.success(`Đã tạo đợt: ${ids.size} học phần`);
     } catch {
       message.error('Lỗi khi tải dữ liệu chương trình');
     } finally {
@@ -544,7 +556,7 @@ const RegistrationsPage: React.FC = () => {
                 Đăng ký Nguyện vọng Giảng dạy
               </h2>
               <p style={{ color: 'var(--color-text-secondary)', fontSize: '13.5px', margin: '4px 0 0 0' }}>
-                Chọn một phiên bản để rải môn/giảng viên hoặc tạo một phiên bản nháp mới.
+                Chọn một phiên bản để rải học phần/giảng viên hoặc tạo một phiên bản nháp mới.
               </p>
             </div>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => {
@@ -552,6 +564,8 @@ const RegistrationsPage: React.FC = () => {
               setSubjectModalProgramIds([]);
               setSubjectModalEntries({});
               setSubjectModalManualIds([]);
+              setSubjectModalTimetableId(null);
+              setDraftWizardTab('curriculum');
               form.resetFields();
               setDraftWizardOpen(true);
             }}>Tạo Nháp mới</Button>
@@ -595,7 +609,7 @@ const RegistrationsPage: React.FC = () => {
                         }}
                         style={{ fontWeight: 500 }}
                       >
-                        {l.is_open ? '🔒 Đóng' : '🔓 Mở'}
+                        {l.is_open ? 'Đóng' : 'Mở'}
                       </Button>,
                       <Button type="link" danger icon={<DeleteOutlined />} onClick={(e) => { e.stopPropagation(); handleDeleteList(l.list_id); }}>
                         Xóa
@@ -660,7 +674,7 @@ const RegistrationsPage: React.FC = () => {
                 )}
               </div>
               <Upload beforeUpload={handleUploadExcel} showUploadList={false} accept=".xlsx, .xls">
-                <Button size="small" icon={<CloudUploadOutlined />} disabled={!selectedListId}>Import Excel</Button>
+                <Button size="small" icon={<CloudUploadOutlined />} disabled={!selectedListId}>Nhập từ Excel</Button>
               </Upload>
             </div>
 
@@ -680,7 +694,7 @@ const RegistrationsPage: React.FC = () => {
                   message.error('Lỗi khi xuất file Excel');
                 }
               }} disabled={!selectedListId}>
-                Export Excel
+                Xuất ra Excel
               </Button>
               <Button size="small" type="primary" icon={<SaveOutlined />} onClick={saveAssignments} disabled={!selectedListId}>
                 Lưu Phiên Bản
@@ -706,7 +720,7 @@ const RegistrationsPage: React.FC = () => {
                     }}
                     style={{ fontWeight: 600, fontSize: '11px' }}
                   >
-                    {isOpen ? '🔒 Đóng đăng ký' : '🔓 Mở đăng ký'}
+                    {isOpen ? 'Đóng đăng ký' : 'Mở đăng ký'}
                   </Button>
                 );
               })()}
@@ -722,20 +736,20 @@ const RegistrationsPage: React.FC = () => {
               <div style={{ flex: 1, background: 'var(--color-white)', border: '1px solid var(--color-border)', borderRadius: 'var(--radius-lg)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--color-border-light)', flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Danh sách Môn Học</h3>
-                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>({displaySubjects.length} môn)</span>
+                    <h3 style={{ fontWeight: 600, margin: 0, color: 'var(--color-text)', fontSize: '14px' }}>Danh sách Học Phần</h3>
+                    <span style={{ fontSize: '12px', color: 'var(--color-text-muted)' }}>({displaySubjects.length} học phần)</span>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
                     {filteredSubjectIds && (
                       <Tag color="orange" closable onClose={clearCurriculumFilter} style={{ margin: 0, fontSize: '11px' }}>
-                        {batchFilterLabel ? `Đợt: ${filteredSubjectIds.size} môn` : `Lọc: ${filteredSubjectIds.size} môn`}
+                        {batchFilterLabel ? `Đợt: ${filteredSubjectIds.size} học phần` : `Lọc: ${filteredSubjectIds.size} học phần`}
                       </Tag>
                     )}
-                    <Tooltip title="Tạo đợt môn học (chọn kì riêng cho từng khung)">
+                    <Tooltip title="Tạo đợt học phần (chọn kì riêng cho từng khung)">
                       <Button size="small" icon={<AppstoreAddOutlined />} onClick={() => setBatchModalOpen(true)}>Tạo đợt</Button>
                     </Tooltip>
                     <Popover
-                      title={<span style={{ fontWeight: 600 }}>Lọc môn theo Đợt học</span>}
+                      title={<span style={{ fontWeight: 600 }}>Lọc học phần theo Đợt học</span>}
                       trigger="click"
                       open={filterPopoverOpen}
                       onOpenChange={setFilterPopoverOpen}
@@ -771,18 +785,18 @@ const RegistrationsPage: React.FC = () => {
                         </div>
                       }
                     >
-                      <Tooltip title="Lọc môn theo đợt học">
+                      <Tooltip title="Lọc học phần theo đợt học">
                         <Button size="small" icon={<FilterOutlined />} type={filteredSubjectIds ? 'primary' : 'default'} />
                       </Tooltip>
                     </Popover>
                   </div>
                 </div>
                 <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }} className="custom-scrollbar">
-                {!selectedListId && <div className="text-red-500 italic">Vui lòng chọn/tạo 1 phiên bản trước khi rải môn.</div>}
+                {!selectedListId && <div className="text-red-500 italic">Vui lòng chọn/tạo 1 phiên bản trước khi rải học phần.</div>}
                 {selectedListId && displaySubjects.length === 0 && filteredSubjectIds && (
                   <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--color-text-muted)' }}>
                     <FilterOutlined style={{ fontSize: '28px', marginBottom: '8px', opacity: 0.4 }} />
-                    <div>Không có môn nào phù hợp với bộ lọc đã chọn.</div>
+                    <div>Không có học phần nào phù hợp với bộ lọc đã chọn.</div>
                     <Button size="small" type="link" onClick={clearCurriculumFilter}>Xóa bộ lọc</Button>
                   </div>
                 )}
@@ -847,7 +861,7 @@ const RegistrationsPage: React.FC = () => {
                       Thỉnh giảng
                     </Tag.CheckableTag>
                     <div style={{ marginLeft: 'auto' }}>
-                      <Tooltip title={lecSortOrder === 'asc' ? 'Đang: Ít → Nhiều. Bấm đổi' : lecSortOrder === 'desc' ? 'Đang: Nhiều → Ít. Bấm tắt' : 'Sắp xếp theo số môn'}>
+                      <Tooltip title={lecSortOrder === 'asc' ? 'Đang: Ít → Nhiều. Bấm đổi' : lecSortOrder === 'desc' ? 'Đang: Nhiều → Ít. Bấm tắt' : 'Sắp xếp theo số học phần'}>
                         <Button
                           size="small"
                           type={lecSortOrder ? 'primary' : 'default'}
@@ -881,14 +895,14 @@ const RegistrationsPage: React.FC = () => {
 
       {/* DRAFT WIZARD MODAL */}
       <Modal 
-        title={draftWizardMode === 'create' ? "Tạo Phiên bản Phân công & Chọn môn" : "Quản lý môn học cho đợt đăng ký"}
+        title={draftWizardMode === 'create' ? "Tạo Phiên bản Phân công & Chọn học phần" : "Quản lý học phần cho đợt đăng ký"}
         open={draftWizardOpen} 
         onCancel={() => setDraftWizardOpen(false)}
         width={700}
         footer={[
           <Button key="cancel" onClick={() => setDraftWizardOpen(false)}>Hủy</Button>,
           <Button key="submit" type="primary" loading={loadingDraftWizard} onClick={handleDraftSubmit}>
-            {draftWizardMode === 'create' ? "Tạo và Lưu môn" : "Lưu danh sách môn"}
+            {draftWizardMode === 'create' ? "Tạo và Lưu học phần" : "Lưu danh sách học phần"}
           </Button>
         ]}
       >
@@ -903,7 +917,7 @@ const RegistrationsPage: React.FC = () => {
           </Form>
         )}
 
-        <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '12px' }}>Cấu hình Môn học cho đợt này</div>
+        <div style={{ fontWeight: 600, fontSize: '15px', marginBottom: '12px' }}>Cấu hình Học phần cho đợt này</div>
         {/* Tab switcher */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
           <Button
@@ -912,6 +926,13 @@ const RegistrationsPage: React.FC = () => {
             style={{ fontWeight: 600 }}
           >
             Chọn từ Khung CT
+          </Button>
+          <Button
+            type={draftWizardTab === 'timetable' ? 'primary' : 'default'}
+            onClick={() => setDraftWizardTab('timetable')}
+            style={{ fontWeight: 600 }}
+          >
+            Chọn từ TKB
           </Button>
           <Button
             type={draftWizardTab === 'manual' ? 'primary' : 'default'}
@@ -925,7 +946,7 @@ const RegistrationsPage: React.FC = () => {
         {draftWizardTab === 'curriculum' ? (
           <div>
             <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
-              Chọn khung chương trình → chọn kì → hệ thống tự lấy danh sách môn.
+              Chọn khung chương trình → chọn kì → hệ thống tự lấy danh sách học phần.
             </p>
             <Select
               mode="multiple"
@@ -961,14 +982,30 @@ const RegistrationsPage: React.FC = () => {
               );
             })}
           </div>
+        ) : draftWizardTab === 'timetable' ? (
+          <div>
+            <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
+              Chọn một đợt thời khóa biểu đang tồn tại. Hệ thống sẽ tự động quét các học phần có trong đợt đó để nạp vào danh sách đợt đăng ký nguyện vọng.
+            </p>
+            <Select
+              placeholder="Chọn Đợt TKB cần quét..."
+              style={{ width: '100%', marginBottom: '12px' }}
+              value={subjectModalTimetableId}
+              onChange={setSubjectModalTimetableId}
+              options={timetableSessions.map(t => ({
+                label: `${t.plan_name} (${dayjs(t.created_at).format('DD/MM/YYYY')})`,
+                value: t.session_id
+              }))}
+            />
+          </div>
         ) : (
           <div>
             <p style={{ fontSize: '13px', color: '#6b7280', marginBottom: '12px' }}>
-              Chọn các môn thủ công từ danh sách môn trong hệ thống.
+              Chọn các học phần thủ công từ danh sách học phần trong hệ thống.
             </p>
             <Select
               mode="multiple"
-              placeholder="Tìm và chọn môn học..."
+              placeholder="Tìm và chọn học phần..."
               style={{ width: '100%', marginBottom: '12px' }}
               value={subjectModalManualIds}
               onChange={setSubjectModalManualIds}
@@ -983,7 +1020,7 @@ const RegistrationsPage: React.FC = () => {
               maxTagCount={8}
             />
             <div style={{ fontSize: '12px', color: '#9ca3af', marginBottom: '12px' }}>
-              Đã chọn: <strong>{subjectModalManualIds.length}</strong> môn
+              Đã chọn: <strong>{subjectModalManualIds.length}</strong> học phần
             </div>
           </div>
         )}
@@ -995,10 +1032,10 @@ const RegistrationsPage: React.FC = () => {
           
           {missingSubjects.length > 0 && (
           <div className="mb-6">
-             <h3 className="font-bold mb-2 text-blue-700">Danh sách Môn Học Mới:</h3>
+             <h3 className="font-bold mb-2 text-blue-700">Danh sách Học Phần Mới:</h3>
              <Table dataSource={missingSubjects} pagination={false} rowKey="subject_code" size="small" bordered>
-                <Table.Column title="Mã Môn" dataIndex="subject_code" width={100} />
-                <Table.Column title="Tên Môn" dataIndex="subject_name" />
+                <Table.Column title="Mã Học phần" dataIndex="subject_code" width={100} />
+                <Table.Column title="Tên Học phần" dataIndex="subject_name" />
                 <Table.Column title="Tín chỉ" dataIndex="credits" width={100} render={(value, _record, index) => (
                    <Input type="number" value={value} onChange={e => {
                        const newVal = [...missingSubjects];
@@ -1044,7 +1081,7 @@ const RegistrationsPage: React.FC = () => {
 
       {/* Modal Tạo Đợt */}
       <Modal
-        title={<span style={{ fontWeight: 600 }}>Tạo Đợt Môn Học</span>}
+        title={<span style={{ fontWeight: 600 }}>Tạo Đợt Học Phần</span>}
         open={batchModalOpen}
         onCancel={() => setBatchModalOpen(false)}
         onOk={applyBatchFilter}

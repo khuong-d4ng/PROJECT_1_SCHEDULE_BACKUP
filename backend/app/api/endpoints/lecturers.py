@@ -41,16 +41,29 @@ def create_lecturer(lecturer: LecturerCreateWithAccount, db: Session = Depends(g
     if existing_user:
         raise HTTPException(status_code=400, detail=f"Username '{username}' đã tồn tại")
     
+    # Process email
+    email_val = lecturer.email
+    if email_val is not None:
+        email_val = email_val.strip()
+        if email_val == "":
+            email_val = None
+
+    if email_val is not None:
+        existing_email = db.query(models.User).filter(models.User.email == email_val).first()
+        if existing_email:
+            raise HTTPException(status_code=400, detail="Email này đã được sử dụng bởi tài khoản khác")
+
     user = models.User(
         username=username,
-        email=f"{username}@lecturer.local",
+        email=email_val,
         password_hash=hash_password(password),
         role=models.RoleEnum.LECTURER,
+        receive_emails=False if email_val is None else True,
     )
     db.add(user)
     db.flush()  # Get user_id
     
-    lec_data = lecturer.model_dump(exclude={"account_username", "account_password"})
+    lec_data = lecturer.model_dump(exclude={"account_username", "account_password", "email"})
     lec_data["user_id"] = user.user_id
     new_lecturer = models.Lecturer(**lec_data)
     db.add(new_lecturer)
@@ -71,12 +84,55 @@ def update_lecturer(lecturer_id: int, lecturer: schemas.LecturerUpdate, db: Sess
         if existing:
             raise HTTPException(status_code=400, detail="Mã giảng viên đã tồn tại")
 
+    if "email" in update_data:
+        email_val = update_data.pop("email")
+        if email_val is not None:
+            email_val = email_val.strip()
+            if email_val == "":
+                email_val = None
+        
+        if email_val is not None:
+            existing_email = db.query(models.User).filter(
+                models.User.email == email_val,
+                models.User.user_id != db_lecturer.user_id
+            ).first()
+            if existing_email:
+                raise HTTPException(status_code=400, detail="Email này đã được sử dụng bởi tài khoản khác")
+        
+        if db_lecturer.user:
+            db_lecturer.user.email = email_val
+            # If email is empty, disable email notifications
+            if email_val is None:
+                db_lecturer.user.receive_emails = False
+
     for key, value in update_data.items():
         setattr(db_lecturer, key, value)
         
     db.commit()
     db.refresh(db_lecturer)
     return db_lecturer
+
+@router.delete("/{lecturer_id}")
+def delete_lecturer(lecturer_id: int, db: Session = Depends(get_db)):
+    db_lecturer = db.query(models.Lecturer).filter(models.Lecturer.lecturer_id == lecturer_id).first()
+    if not db_lecturer:
+        raise HTTPException(status_code=404, detail="Không tìm thấy giảng viên")
+    
+    user_id = db_lecturer.user_id
+    try:
+        db.delete(db_lecturer)
+        if user_id:
+            db_user = db.query(models.User).filter(models.User.user_id == user_id).first()
+            if db_user:
+                db.delete(db_user)
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=400, 
+            detail="Không thể xóa giảng viên này vì đã có dữ liệu liên kết (nguyện vọng đăng ký hoặc lịch giảng dạy)."
+        )
+    return {"message": "Xóa giảng viên thành công"}
 
 # --- Thêm mới chức năng Import Web ---
 
@@ -170,7 +226,7 @@ def get_lecturer_registrations(lecturer_id: int, list_id: Optional[int] = None, 
 
 
 @router.get("/{lecturer_id}/timetable-info", response_model=schemas.LecturerTimetableInfoResponse)
-def get_lecturer_timetable_info(lecturer_id: int, session_id: Optional[int] = None, db: Session = Depends(get_db)):
+def get_lecturer_timetable_info(lecturer_id: int, session_id: Optional[str] = None, db: Session = Depends(get_db)):
     """Lấy thông tin lịch dạy chi tiết của giảng viên từ các TKB (timetable_rows)."""
     from sqlalchemy import or_
     
@@ -210,8 +266,12 @@ def get_lecturer_timetable_info(lecturer_id: int, session_id: Optional[int] = No
             )
         )
     )
-    if session_id:
-        rows_query = rows_query.filter(models.TimetableRow.session_id == session_id)
+    if session_id and session_id != "all":
+        try:
+            sess_id_int = int(session_id)
+            rows_query = rows_query.filter(models.TimetableRow.session_id == sess_id_int)
+        except ValueError:
+            pass
     
     raw_rows = rows_query.all()
     

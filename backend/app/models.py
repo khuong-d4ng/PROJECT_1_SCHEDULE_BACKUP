@@ -27,8 +27,9 @@ class User(Base):
     user_id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
-    email = Column(String(100), unique=True, index=True, nullable=False)
+    email = Column(String(100), unique=True, index=True, nullable=True)
     role = Column(Enum(RoleEnum), default=RoleEnum.LECTURER, nullable=False)
+    receive_emails = Column(Boolean, default=True, nullable=False)
     
     lecturer_profile = relationship("Lecturer", back_populates="user", uselist=False)
 
@@ -45,6 +46,14 @@ class Lecturer(Base):
     user = relationship("User", back_populates="lecturer_profile")
     registrations = relationship("LecturerRegistration", back_populates="lecturer")
     schedules = relationship("Schedule", back_populates="lecturer")
+
+    @property
+    def email(self):
+        return self.user.email if self.user else None
+
+    @property
+    def receive_emails(self):
+        return self.user.receive_emails if self.user else True
 
 class Semester(Base):
     __tablename__ = "semesters"

@@ -7,8 +7,63 @@ from app.services.auto_assign import AutoAssigner
 
 import pandas as pd
 import io
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
 
 router = APIRouter()
+
+class TimetableRowBatchUpdate(BaseModel):
+    row_id: int
+    fixed_shift: Optional[str] = None
+    room_type: Optional[str] = None
+    morning_day: Optional[str] = None
+    afternoon_day: Optional[str] = None
+    main_lecturer_id: Optional[int] = None
+    prac_lecturer_id: Optional[int] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+
+@router.post("/{session_id}/save-rows")
+def save_timetable_rows(session_id: int, payload: List[TimetableRowBatchUpdate], db: Session = Depends(get_db)):
+    """Cập nhật hàng loạt các dòng thời khóa biểu của một đợt TKB."""
+    session = db.query(models.SchedulingSession).filter(
+        models.SchedulingSession.session_id == session_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Đợt TKB")
+        
+    try:
+        payload_map = {item.row_id: item for item in payload}
+        rows = db.query(models.TimetableRow).filter(
+            models.TimetableRow.session_id == session_id,
+            models.TimetableRow.row_id.in_(list(payload_map.keys()))
+        ).all()
+        
+        for row in rows:
+            item = payload_map[row.row_id]
+            row.fixed_shift = item.fixed_shift
+            row.room_type = item.room_type
+            row.morning_day = item.morning_day
+            row.afternoon_day = item.afternoon_day
+            row.main_lecturer_id = item.main_lecturer_id
+            row.prac_lecturer_id = item.prac_lecturer_id
+            
+            if item.start_date:
+                row.start_date = datetime.strptime(item.start_date[:10], "%Y-%m-%d").date()
+            else:
+                row.start_date = None
+                
+            if item.end_date:
+                row.end_date = datetime.strptime(item.end_date[:10], "%Y-%m-%d").date()
+            else:
+                row.end_date = None
+                
+        db.commit()
+        return {"message": "Đã lưu thành công toàn bộ thay đổi!"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi khi lưu hàng loạt: {str(e)}")
 
 @router.get("/", response_model=List[schemas.TimetableSessionResponse])
 def get_timetable_sessions(db: Session = Depends(get_db)):
@@ -151,10 +206,15 @@ def update_session_info(session_id: int, payload: schemas.SessionInfoUpdate, db:
     session = db.query(models.SchedulingSession).filter(models.SchedulingSession.session_id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="Không tìm thấy Đợt TKB")
-    if payload.plan_name is not None:
+    
+    update_data = payload.dict(exclude_unset=True)
+    if "plan_name" in update_data:
         session.plan_name = payload.plan_name
-    if payload.description is not None:
+    if "description" in update_data:
         session.description = payload.description
+    if "registration_list_id" in update_data:
+        session.registration_list_id = payload.registration_list_id
+        
     db.commit()
     db.refresh(session)
     return session
@@ -312,6 +372,30 @@ def auto_assign(session_id: int, strategy: str = "A", db: Session = Depends(get_
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Lỗi Auto-Assign: {str(e)}")
+
+@router.post("/{session_id}/reset")
+def reset_timetable(session_id: int, db: Session = Depends(get_db)):
+    """Reset toàn bộ giảng viên và ca học đã gán về trống."""
+    session = db.query(models.SchedulingSession).filter(
+        models.SchedulingSession.session_id == session_id
+    ).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Không tìm thấy Đợt TKB")
+        
+    try:
+        db.query(models.TimetableRow).filter(
+            models.TimetableRow.session_id == session_id
+        ).update({
+            models.TimetableRow.main_lecturer_id: None,
+            models.TimetableRow.prac_lecturer_id: None,
+            models.TimetableRow.morning_day: None,
+            models.TimetableRow.afternoon_day: None
+        }, synchronize_session=False)
+        db.commit()
+        return {"message": "Đã reset thành công toàn bộ Giảng viên và Ca học"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Lỗi khi reset: {str(e)}")
 
 @router.get("/{session_id}/export-excel")
 def export_timetable_excel(session_id: int, db: Session = Depends(get_db)):

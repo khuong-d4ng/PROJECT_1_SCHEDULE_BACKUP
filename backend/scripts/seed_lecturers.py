@@ -44,9 +44,10 @@ def main():
             # Create new user
             user = models.User(
                 username=lec.lecturer_code,
-                email=f"{lec.lecturer_code}@lecturer.local",
+                email=None,
                 password_hash=default_password,
                 role=models.RoleEnum.LECTURER,
+                receive_emails=False,
             )
             db.add(user)
             db.flush()  # Get the user_id

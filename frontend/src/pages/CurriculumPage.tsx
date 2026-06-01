@@ -63,7 +63,7 @@ const DroppableSemester = ({ semester, children }: { semester: number, children:
   return (
     <div ref={setNodeRef} className={`min-h-[80px] p-2 rounded transition-colors ${isOver ? 'bg-blue-50 border-2 border-dashed border-blue-300' : 'bg-transparent border-2 border-transparent'}`}>
       {children}
-      {React.Children.count(children) === 0 && <div className="text-gray-400 text-center py-4">Kéo môn học vào đây</div>}
+      {React.Children.count(children) === 0 && <div className="text-gray-400 text-center py-4">Kéo học phần vào đây</div>}
     </div>
   );
 };
@@ -230,16 +230,16 @@ const CurriculumPage: React.FC = () => {
                   const res = await apiClient.post(`/programs/${selectedProgram.id}/import-excel`, formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                   });
-                  message.success(`Import thành công! Đã thêm ${res.data.new_subjects} môn mới và xếp vào ${res.data.curriculum_rows} tiết.`);
+                  message.success(`Nhập dữ liệu thành công! Đã thêm ${res.data.new_subjects} học phần mới và xếp vào ${res.data.curriculum_rows} tiết.`);
                   fetchCurriculums(selectedProgram.id);
                   onSuccess?.("ok");
                 } catch (e: any) {
-                  message.error(e.response?.data?.detail || "Lỗi import");
+                  message.error(e.response?.data?.detail || "Lỗi khi nhập dữ liệu");
                   onError?.(e);
                 }
               }}
             >
-                  <Button type="primary" danger icon={<UploadOutlined />}>Import Excel CTĐT</Button>
+                  <Button type="primary" danger icon={<UploadOutlined />}>Nhập CTĐT từ Excel</Button>
             </Upload>
             </div>
           )
@@ -278,7 +278,7 @@ const CurriculumPage: React.FC = () => {
                     borderBottom: '1px solid #f0f0f0',
                     paddingBottom: 8
                   }}>
-                    Kỳ học {sem} <span style={{fontSize: '13px', color: '#888', fontWeight: 'normal', marginLeft: 8}}>({subjects.length} môn học)</span>
+                    Kỳ học {sem} <span style={{fontSize: '13px', color: '#888', fontWeight: 'normal', marginLeft: 8}}>({subjects.length} học phần)</span>
                   </h3>
                   {isEditMode ? (
                     <DroppableSemester semester={Number(sem)}>
@@ -299,7 +299,7 @@ const CurriculumPage: React.FC = () => {
                 </div>
               ))}
               {curriculums.length === 0 && !loading && (
-                <Empty className="mt-10" description="Chưa có môn học nào trong khung chương trình này" />
+                <Empty className="mt-10" description="Chưa có học phần nào trong khung chương trình này" />
               )}
             </div>
             <DragOverlay>

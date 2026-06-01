@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, BackgroundTasks
 from sqlalchemy.orm import Session
 from sqlalchemy import exc
 from typing import List, Optional
@@ -10,6 +10,7 @@ from datetime import datetime
 
 from app.core.database import get_db
 from app import models, schemas
+from app.core.mail import send_assignment_notification_email
 from app.models import Semester, SemesterStatusEnum, RegistrationListSubject
 from fastapi.responses import Response
 
@@ -168,7 +169,7 @@ class BulkSavePayload(BaseModel):
     assignments: List[RegistrationAssignmentItem]
 
 @router.post("/lists/{list_id}/save")
-def save_registration_list(list_id: int, payload: BulkSavePayload, db: Session = Depends(get_db)):
+def save_registration_list(list_id: int, payload: BulkSavePayload, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     """ API nhắm tới việc nhận toàn bộ kết quả Drag & Drop từ Frontend để lưu thẳng xuống DB """
     db_list = db.query(models.RegistrationList).filter(models.RegistrationList.list_id == list_id).first()
     if not db_list:
@@ -219,6 +220,15 @@ def save_registration_list(list_id: int, payload: BulkSavePayload, db: Session =
                         is_read=False
                     )
                     db.add(new_noti)
+
+                    # Gửi email thông báo bất đồng bộ
+                    if lecturer.user and lecturer.user.email and lecturer.user.receive_emails:
+                        background_tasks.add_task(
+                            send_assignment_notification_email,
+                            lecturer.user.email,
+                            lecturer.full_name,
+                            db_list.list_name
+                        )
 
         db.commit()
         return {"message": f"Chốt danh sách thành công! (Lưu tổng cộng {len(new_records)} nguyện vọng)"}

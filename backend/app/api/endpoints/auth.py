@@ -18,8 +18,9 @@ class LoginRequest(BaseModel):
 class UserInfo(BaseModel):
     user_id: int
     username: str
-    email: str
+    email: Optional[str] = None
     role: str
+    receive_emails: bool = True
     lecturer_id: Optional[int] = None
     full_name: Optional[str] = None
 
@@ -52,6 +53,7 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
             username=user.username,
             email=user.email,
             role=user.role.value,
+            receive_emails=user.receive_emails,
             lecturer_id=lecturer_id,
             full_name=full_name or user.username,
         )
@@ -69,6 +71,7 @@ def get_me(current_user: models.User = Depends(get_current_user)):
         username=current_user.username,
         email=current_user.email,
         role=current_user.role.value,
+        receive_emails=current_user.receive_emails,
         lecturer_id=lecturer_id,
         full_name=full_name or current_user.username,
     )

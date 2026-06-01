@@ -174,25 +174,99 @@ So với các giải pháp kéo thả truyền thống như React DnD hay React 
 
 Trọng tâm xử lý thông minh của hệ thống nằm ở **Động cơ phân công tự động (Auto-Assignment Engine)** đặt tại Backend, được xây dựng dựa trên mô hình bài toán **Thỏa mãn ràng buộc (Constraint Satisfaction Problem - CSP)**. CSP là một bài toán toán học được định nghĩa bởi một tập hợp các biến cần tìm giá trị, các miền giá trị khả dụng cho từng biến và các ràng buộc bắt buộc phải thỏa mãn.
 
+Mô hình bài toán phân công thời khóa biểu tự động được cấu trúc hóa dưới dạng một bài toán CSP gồm đầy đủ các thành phần cốt lõi (Biến, Miền giá trị, Ràng buộc cứng, Ràng buộc mềm và Chiến lược phân bổ) được thể hiện qua sơ đồ cấu trúc dưới đây:
+
+```mermaid
+flowchart TB
+    %% Nodes
+    Engine[["ĐỘNG CƠ PHÂN CÔNG TỰ ĐỘNG (CSP SOLVER)"]]
+    
+    subgraph Variables ["1. BIẾN (VARIABLES)"]
+        V_Lec["Mã Giảng viên chính (main_lecturer_id)"]
+        V_Prac["Mã Giảng viên thực hành (prac_lecturer_id)"]
+        V_Slot["Buổi học (morning_day / afternoon_day)"]
+    end
+    
+    subgraph Domains ["2. MIỀN GIÁ TRỊ (DOMAINS)"]
+        D_Lec["Giảng viên đăng ký dạy môn học (Capability Pool)"]
+        D_Slot["Các ca học khả dụng {Thứ 2 .. Thứ 7} thuộc Ca cố định {Sáng / Chiều}"]
+    end
+    
+    subgraph HardConstraints ["3. RÀNG BUỘC CỨNG (HARD CONSTRAINTS) - Bắt buộc thỏa mãn"]
+        C_Class["Tránh trùng lịch học của Lớp (C_CLASS_OVERLAP)"]
+        C_Lec["Tránh trùng lịch dạy của Giảng viên (C_LEC_OVERLAP)"]
+        C_Shift["Tuân thủ ca học cố định Sáng/Chiều (C_SHIFT_STRICT)"]
+        C_Cap["Đúng chuyên môn đăng ký nguyện vọng (C_CAPABILITY_STRICT)"]
+        C_Limit["Giới hạn tải chính: ≤ 3 môn (C_MAIN_LEC_MAX_SUBJECTS) & ≤ 10 lớp (C_MAIN_LEC_MAX_CLASSES)"]
+        C_Exempt["Bỏ qua môn đại cương ngoài danh mục (C_MANUAL_EXEMPTION)"]
+    end
+    
+    subgraph SoftConstraints ["4. RÀNG BUỘC MỀM & ĐIỂM SỐ (SOFT CONSTRAINTS) - Tối ưu hóa"]
+        O_Prac["Ưu tiên ghép cặp GV lý thuyết và thực hành (O_PRAC_CO_ASSIGN)"]
+        O_Fatigue["Phạt điểm dạy trùng môn > 6 lớp (O_SUBJECT_FATIGUE)"]
+        O_Max["Phạt nặng khi vượt quá 250 tiết (O_MAX_HOURS_250)"]
+        O_Fallback["Cơ chế để trống khi hết GV khả dụng (O_FILL_FALLBACK)"]
+    end
+
+    subgraph Strategies ["5. CHIẾN LƯỢC PHÂN BỔ (SCORING STRATEGIES)"]
+        Str_A["Chiến lược A: Bão hòa (Saturation)<br>Ưu tiên điền đầy 160h định mức chuẩn của từng người trước"]
+        Str_B["Chiến lược B: Cân bằng tải (Load Balancing)<br>Ưu tiên phân bổ đều số tiết dạy cho toàn bộ giảng viên"]
+    end
+
+    %% Connections
+    Engine --> Variables
+    Engine --> Domains
+    Engine --> HardConstraints
+    Engine --> SoftConstraints
+    Engine --> Strategies
+    
+    %% Styling
+    style Engine fill:#1890ff,stroke:#0050b3,stroke-width:2px,color:#fff
+    style HardConstraints fill:#fff1f0,stroke:#ffa39e,stroke-width:1.5px
+    style SoftConstraints fill:#f6ffed,stroke:#b7eb8f,stroke-width:1.5px
+    style Strategies fill:#e6f7ff,stroke:#91d5ff,stroke-width:1.5px
 ```
-       +--------------------------------------------+
-       |         AUTO-ASSIGNMENT ENGINE (CSP)       |
-       +--------------------------------------------+
-                              |
-       +----------------------v----------------------+
-       |                                             |
-[ RÀNG BUỘC CỨNG (Hard) ]                      [ RÀNG BUỘC MỀM (Soft) ]
-(Vi phạm => Lịch vô hiệu)                      (Tối ưu hóa điểm số)
-- Tránh trùng lịch GV / Lớp                    - Cân bằng tải tiết dạy
-- Cố định ca học Sáng/Chiều                    - Hạn chế quá tải lớp/môn
-- Giới hạn số môn/lớp gán                      - Ghép cặp GV lý thuyết/thực hành
-       |                                             |
-       +----------------------v----------------------+
-                              |
-                     [ CHIẾN LƯỢC PHÂN BỔ ]
-                     - Chiến lược A: Bão hòa (Saturation)
-                     - Chiến lược B: Cân bằng tải (Load Balancing)
+
+Tiến trình thực thi và giải quyết bài toán phân công tự động của động cơ CSP Solver được triển khai tuần tự theo sơ đồ thuật toán dưới đây:
+
+```mermaid
+flowchart TD
+    Start([Bắt đầu tự động phân công]) --> LoadData[1. Tải dữ liệu: Lớp, Môn học, Nguyện vọng đăng ký]
+    LoadData --> FilterExempt[2. Lọc bỏ các môn đại cương miễn trừ xếp lịch: C_MANUAL_EXEMPTION]
+    FilterExempt --> LoopRows{Duyệt từng dòng TKB trống}
+    
+    LoopRows -- Hết dòng trống --> CommitDB[Lưu kết quả phân công vào PostgreSQL] --> End([Hoàn thành])
+    
+    LoopRows -- Còn dòng trống --> DetermineSlots[Xác định các ca học khả dụng: C_SHIFT_STRICT]
+    DetermineSlots --> GetCandidates[Lọc ứng viên giảng dạy theo nguyện vọng môn đăng ký: C_CAPABILITY_STRICT]
+    
+    GetCandidates --> FilterHard{Kiểm tra Ràng buộc cứng: C_CLASS_OVERLAP, C_LEC_OVERLAP, giới hạn số môn/lớp}
+    
+    FilterHard -- Vi phạm --> ExcludeCombo[Loại bỏ cặp Slot - Giảng viên này]
+    ExcludeCombo --> TryNextCombo{Còn cặp nào khác?}
+    
+    FilterHard -- Thỏa mãn --> ScoreCandidates[Đánh giá điểm số ứng viên]
+    
+    ScoreCandidates --> ApplyStrategy{Áp dụng Chiến lược Phân bổ}
+    ApplyStrategy -->|Chiến lược A: Bão hòa| Saturation[Ưu tiên điền đầy 160h định mức của từng người trước: O_TARGET_HOURS_160]
+    ApplyStrategy -->|Chiến lược B: Cân bằng tải| LoadBalancing[Ưu tiên giảng viên có ít giờ dạy nhất để phân bổ đều]
+    
+    Saturation --> ApplySoftPenalties[Trừ điểm vi phạm Ràng buộc mềm]
+    LoadBalancing --> ApplySoftPenalties
+    
+    ApplySoftPenalties --> SoftConstraints["Kiểm tra Ràng buộc mềm:<br>- Vượt quá 250 tiết? (O_MAX_HOURS_250)<br>- Dạy môn này > 6 lớp? (O_SUBJECT_FATIGUE)<br>- Ghép cặp thực hành? (O_PRAC_CO_ASSIGN)"]
+    
+    SoftConstraints --> SelectBest[Chọn cặp Slot - Giảng viên có điểm cao nhất]
+    SelectBest --> Assign[Gán Giảng viên & Slot vào dòng TKB]
+    Assign --> UpdateTracking[Cập nhật số giờ, ca học đã gán của giảng viên/lớp]
+    UpdateTracking --> LoopRows
+    
+    TryNextCombo -- Không còn --> Fallback[Kích hoạt O_FILL_FALLBACK<br>Để trống GV & Cảnh báo: Hết GV khả dụng]
+    Fallback --> LoopRows
+    
+    TryNextCombo -- Còn --> FilterHard
 ```
+
 
 Hệ thống lập lịch được mô hình hóa chi tiết trong tệp tin `auto_assign.py` với các tham số và logic ràng buộc sau:
 
