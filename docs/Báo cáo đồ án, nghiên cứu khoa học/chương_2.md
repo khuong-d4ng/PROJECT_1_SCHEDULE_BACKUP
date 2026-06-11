@@ -172,9 +172,9 @@ So với các giải pháp kéo thả truyền thống như React DnD hay React 
 
 ### 2.2.2. Thuật toán thỏa mãn ràng buộc (CSP) ứng dụng trong tự động hóa xếp lịch
 
-Trọng tâm xử lý thông minh của hệ thống nằm ở **Động cơ phân công tự động (Auto-Assignment Engine)** đặt tại Backend, được xây dựng dựa trên mô hình bài toán **Thỏa mãn ràng buộc (Constraint Satisfaction Problem - CSP)**. CSP là một bài toán toán học được định nghĩa bởi một tập hợp các biến cần tìm giá trị, các miền giá trị khả dụng cho từng biến và các ràng buộc bắt buộc phải thỏa mãn.
+Trọng tâm xử lý thông minh của hệ thống nằm ở **Động cơ phân công tự động (Auto-Assignment Engine)** đặt tại Backend, được xây dựng dựa trên mô hình bài toán **Thỏa mãn ràng buộc (Constraint Satisfaction Problem - CSP)** kết hợp giải thuật tìm kiếm heuristic cục bộ. Bài toán CSP được định nghĩa toán học thông qua bộ ba yếu tố: tập các biến $X$ (các phần tử cần gán giá trị), miền giá trị khả dụng $D$ của từng biến, và tập các ràng buộc $C$ (bao gồm ràng buộc cứng bắt buộc và ràng buộc mềm tối ưu hóa).
 
-Mô hình bài toán phân công thời khóa biểu tự động được cấu trúc hóa dưới dạng một bài toán CSP gồm đầy đủ các thành phần cốt lõi (Biến, Miền giá trị, Ràng buộc cứng, Ràng buộc mềm và Chiến lược phân bổ) được thể hiện qua sơ đồ cấu trúc dưới đây:
+Mô hình bài toán phân công thời khóa biểu tự động trong hệ thống được cấu trúc hóa dưới dạng một bài toán CSP gồm đầy đủ các thành phần cốt lõi (Biến, Miền giá trị, Ràng buộc cứng, Ràng buộc mềm và Chiến lược phân bổ) được thể hiện qua sơ đồ cấu trúc dưới đây:
 
 ```mermaid
 flowchart TB
@@ -188,7 +188,7 @@ flowchart TB
     end
     
     subgraph Domains ["2. MIỀN GIÁ TRỊ (DOMAINS)"]
-        D_Lec["Giảng viên đăng ký dạy môn học (Capability Pool)"]
+        D_Lec["Giảng viên đăng ký dạy học phần (Capability Pool)"]
         D_Slot["Các ca học khả dụng {Thứ 2 .. Thứ 7} thuộc Ca cố định {Sáng / Chiều}"]
     end
     
@@ -197,13 +197,13 @@ flowchart TB
         C_Lec["Tránh trùng lịch dạy của Giảng viên (C_LEC_OVERLAP)"]
         C_Shift["Tuân thủ ca học cố định Sáng/Chiều (C_SHIFT_STRICT)"]
         C_Cap["Đúng chuyên môn đăng ký nguyện vọng (C_CAPABILITY_STRICT)"]
-        C_Limit["Giới hạn tải chính: ≤ 3 môn (C_MAIN_LEC_MAX_SUBJECTS) & ≤ 10 lớp (C_MAIN_LEC_MAX_CLASSES)"]
-        C_Exempt["Bỏ qua môn đại cương ngoài danh mục (C_MANUAL_EXEMPTION)"]
+        C_Limit["Giới hạn tải chính: ≤ 3 học phần (C_MAIN_LEC_MAX_SUBJECTS) & ≤ 10 lớp (C_MAIN_LEC_MAX_CLASSES)"]
+        C_Exempt["Bỏ qua học phần đại cương ngoài danh mục (C_MANUAL_EXEMPTION)"]
     end
     
     subgraph SoftConstraints ["4. RÀNG BUỘC MỀM & ĐIỂM SỐ (SOFT CONSTRAINTS) - Tối ưu hóa"]
         O_Prac["Ưu tiên ghép cặp GV lý thuyết và thực hành (O_PRAC_CO_ASSIGN)"]
-        O_Fatigue["Phạt điểm dạy trùng môn > 6 lớp (O_SUBJECT_FATIGUE)"]
+        O_Fatigue["Phạt điểm dạy trùng học phần > 6 lớp (O_SUBJECT_FATIGUE)"]
         O_Max["Phạt nặng khi vượt quá 250 tiết (O_MAX_HOURS_250)"]
         O_Fallback["Cơ chế để trống khi hết GV khả dụng (O_FILL_FALLBACK)"]
     end
@@ -231,16 +231,16 @@ Tiến trình thực thi và giải quyết bài toán phân công tự động 
 
 ```mermaid
 flowchart TD
-    Start([Bắt đầu tự động phân công]) --> LoadData[1. Tải dữ liệu: Lớp, Môn học, Nguyện vọng đăng ký]
-    LoadData --> FilterExempt[2. Lọc bỏ các môn đại cương miễn trừ xếp lịch: C_MANUAL_EXEMPTION]
+    Start([Bắt đầu tự động phân công]) --> LoadData[1. Tải dữ liệu: Lớp, Học phần, Nguyện vọng đăng ký]
+    LoadData --> FilterExempt[2. Lọc bỏ các học phần đại cương miễn trừ xếp lịch: C_MANUAL_EXEMPTION]
     FilterExempt --> LoopRows{Duyệt từng dòng TKB trống}
     
     LoopRows -- Hết dòng trống --> CommitDB[Lưu kết quả phân công vào PostgreSQL] --> End([Hoàn thành])
     
     LoopRows -- Còn dòng trống --> DetermineSlots[Xác định các ca học khả dụng: C_SHIFT_STRICT]
-    DetermineSlots --> GetCandidates[Lọc ứng viên giảng dạy theo nguyện vọng môn đăng ký: C_CAPABILITY_STRICT]
+    DetermineSlots --> GetCandidates[Lọc ứng viên giảng dạy theo nguyện vọng học phần đăng ký: C_CAPABILITY_STRICT]
     
-    GetCandidates --> FilterHard{Kiểm tra Ràng buộc cứng: C_CLASS_OVERLAP, C_LEC_OVERLAP, giới hạn số môn/lớp}
+    GetCandidates --> FilterHard{Kiểm tra Ràng buộc cứng: C_CLASS_OVERLAP, C_LEC_OVERLAP, giới hạn số học phần/lớp}
     
     FilterHard -- Vi phạm --> ExcludeCombo[Loại bỏ cặp Slot - Giảng viên này]
     ExcludeCombo --> TryNextCombo{Còn cặp nào khác?}
@@ -254,7 +254,7 @@ flowchart TD
     Saturation --> ApplySoftPenalties[Trừ điểm vi phạm Ràng buộc mềm]
     LoadBalancing --> ApplySoftPenalties
     
-    ApplySoftPenalties --> SoftConstraints["Kiểm tra Ràng buộc mềm:<br>- Vượt quá 250 tiết? (O_MAX_HOURS_250)<br>- Dạy môn này > 6 lớp? (O_SUBJECT_FATIGUE)<br>- Ghép cặp thực hành? (O_PRAC_CO_ASSIGN)"]
+    ApplySoftPenalties --> SoftConstraints["Kiểm tra Ràng buộc mềm:<br>- Vượt quá 250 tiết? (O_MAX_HOURS_250)<br>- Dạy học phần này > 6 lớp? (O_SUBJECT_FATIGUE)<br>- Ghép cặp thực hành? (O_PRAC_CO_ASSIGN)"]
     
     SoftConstraints --> SelectBest[Chọn cặp Slot - Giảng viên có điểm cao nhất]
     SelectBest --> Assign[Gán Giảng viên & Slot vào dòng TKB]
@@ -267,30 +267,42 @@ flowchart TD
     TryNextCombo -- Còn --> FilterHard
 ```
 
+Dưới đây là mô tả chi tiết 4 giai đoạn hoạt động cốt lõi của động cơ CSP Solver được thiết lập trong tệp tin `auto_assign.py`:
 
-Hệ thống lập lịch được mô hình hóa chi tiết trong tệp tin `auto_assign.py` với các tham số và logic ràng buộc sau:
+#### A. Đầu vào của thuật toán (Input)
+Để bắt đầu quá trình tự động hóa xếp lịch, động cơ lập lịch nạp các nguồn thông tin đầu vào từ cơ sở dữ liệu bao gồm:
+1. **Dòng thời khóa biểu trống (Timetable Slots Grid)**: Các dòng lịch biểu chưa được gán giảng viên, mang các thuộc tính ràng buộc cố định như Lớp học phần (`class_name`), Học phần (`subject_id`), và Buổi học cố định (`fixed_shift` - Sáng/Chiều).
+2. **Hồ sơ năng lực và nguyện vọng của Giảng viên (Lecturer Capability & Preference Pool)**: Danh sách đăng ký dạy học phần được trích xuất từ đợt nguyện vọng của học kỳ. Dữ liệu này phân cấp rõ ràng giảng viên đăng ký vai trò lý thuyết (`is_main_lecturer = True`) và giảng viên thực hành.
+3. **Chiến lược phân bổ (Scoring Strategy Selection)**: Lựa chọn của người quản trị về phương án phân phối giờ giảng giữa **Bão hòa (Saturation - Chiến lược A)** và **Cân bằng tải (Load Balancing - Chiến lược B)**.
 
-#### A. Các Tham số Nghiệp vụ Cốt lõi
-*   **Định mức tiết chuẩn (`TARGET_HOURS = 160`):** Định mức giờ giảng tối thiểu của giảng viên cơ hữu trong học kỳ.
-*   **Giờ giảng trần mềm (`SOFT_MAX_HOURS = 250`):** Giới hạn tối đa giờ giảng để đảm bảo chất lượng sư phạm và sức khỏe của giảng viên.
-*   **Giới hạn số môn giảng dạy (`MAX_DISTINCT_SUBJECTS_MAIN = 3`):** Giảng viên chính không dạy quá 3 môn khác nhau để đảm bảo sự tập trung chuyên sâu.
-*   **Giới hạn tổng số lớp giảng dạy (`MAX_CLASSES_MAIN = 10`):** Giảng viên chính không được gán quá 10 lớp học phần trong học kỳ.
-*   **Giới hạn số lớp của cùng một môn (`MAX_SAME_SUBJECT_CLASSES = 6`):** Một giảng viên không dạy quá 6 lớp của cùng một môn học nhằm tránh mệt mỏi bài giảng (Subject Fatigue).
+#### B. Lọc và kiểm tra ràng buộc cứng - Cách xử lý xung đột (Filtering & Hard Constraints)
+Giai đoạn này hoạt động như một bộ lọc (Filter) nghiêm ngặt để loại bỏ mọi phương án gán gây xung đột kỹ thuật hoặc vượt ngưỡng năng lực vật lý của giảng viên. Cặp giá trị (Buổi học - Giảng viên) được chấp nhận nếu vượt qua tất cả các kiểm tra sau:
+1. **Tránh trùng lịch học của Lớp (`C_CLASS_OVERLAP`)**: Một lớp học phần tại một buổi chỉ được phép xếp tối đa một học phần. Hệ thống sử dụng tập hợp `class_slots` để theo dõi và loại trừ các buổi bị trùng của lớp.
+2. **Tránh trùng lịch dạy của Giảng viên (`C_LEC_OVERLAP`)**: Một giảng viên (cho cả vai trò giảng dạy chính và thực hành) không thể cùng lúc giảng dạy ở hai lớp khác nhau trong cùng một ca học. Việc kiểm soát dựa trên tập hợp ca dạy của giảng viên `lec_slots`.
+3. **Tuân thủ buổi cố định (`C_SHIFT_STRICT`)**: Lịch xếp phải tuân thủ nghiêm ngặt thuộc tính ca học đã chọn trước (`Sáng` tương ứng với các ca `S-Thứ_x`, `Chiều` tương ứng với các ca `C-Thứ_x`).
+4. **Đúng chuyên môn đăng ký (`C_CAPABILITY_STRICT`)**: Giảng viên chỉ được xem xét nếu học phần giảng dạy nằm trong danh sách đăng ký đã được phê duyệt trong đợt nguyện vọng.
+5. **Giới hạn số học phần của một giảng viên chính (`C_MAIN_LEC_MAX_SUBJECTS`)**: Số lượng học phần khác biệt tối đa mà một giảng viên chính được gán trong học kỳ không vượt quá $3$ học phần (`MAX_DISTINCT_SUBJECTS_MAIN = 3`).
+6. **Giới hạn tổng số lớp của một giảng viên chính (`C_MAIN_LEC_MAX_CLASSES`)**: Một giảng viên chính không thể gán quá $10$ lớp học phần trong cùng một học kỳ (`MAX_CLASSES_MAIN = 10`).
+7. **Bỏ qua học phần đại cương ngoài danh mục (`C_MANUAL_EXEMPTION`)**: Nếu học phần không có bất kỳ giảng viên nào đăng ký nguyện vọng trong hệ thống (thường là học phần đại cương do Khoa khác đảm nhiệm hoặc học phần tự học), động cơ sẽ tự động bỏ qua để tập trung xử lý các học phần chuyên ngành của Khoa CNTT.
 
-#### B. Kiểm soát các Ràng buộc Cứng (Hard Constraints)
-Các ràng buộc cứng là các quy định bắt buộc 100% phải thỏa mãn để đảm bảo thời khóa biểu hợp lệ về mặt kỹ thuật, nếu vi phạm lịch phân công sẽ hoàn toàn vô hiệu:
-1.  **`C_CLASS_OVERLAP` (Tránh trùng lịch lớp):** Một lớp học cố định không thể học nhiều môn trong cùng một buổi học.
-2.  **`C_LEC_OVERLAP` (Tránh trùng lịch giảng viên):** Một giảng viên (cho cả vai trò dạy lý thuyết và thực hành) không thể xuất hiện ở hai lớp học phần khác nhau trong cùng một buổi học.
-3.  **`C_SHIFT_STRICT` (Cố định ca học):** Lịch xếp phải tuân thủ nghiêm ngặt thuộc tính ca học cố định (`fixed_shift`) của dòng thời khóa biểu (ca sáng ký hiệu bằng `S-T*`, ca chiều ký hiệu bằng `C-T*`).
-4.  **`C_CAPABILITY_STRICT` (Đúng chuyên môn):** Giảng viên chỉ được gán vào lớp học phần nếu môn học đó nằm trong danh mục đăng ký dạy của họ trong hệ thống dữ liệu nguyện vọng.
-5.  **`C_MAIN_LEC_MAX_SUBJECTS` & `C_MAIN_LEC_MAX_CLASSES`:** Áp đặt các giới hạn trần cứng về số môn và số lớp cho giảng viên chính để kiểm soát chặt chẽ tải công việc.
+#### C. Chấm điểm Heuristic và Tiêu chí tối ưu (Scoring & Soft Constraints)
+Tất cả các phương án gán hợp lệ (thỏa mãn 100% ràng buộc cứng) sẽ được đưa vào hàm chấm điểm Heuristic `_score_lecturer` để xếp hạng. Điểm số được tính toán động dựa trên trạng thái tích lũy của hệ thống tại thời điểm duyệt và áp dụng các tiêu chí tối ưu hóa sau:
 
-#### C. Tối ưu hóa các Ràng buộc Mềm và Chiến lược Phân bổ (Soft Constraints & Strategies)
-Các ràng buộc mềm không làm vô hiệu hóa lịch biểu nhưng được hệ thống sử dụng để chấm điểm và lựa chọn phương án phân công tối ưu nhất thông qua hai chiến lược:
--   **Chiến lược A - Bão hòa (Saturation):** Hệ thống ưu tiên gán lớp cho một giảng viên để họ nhanh chóng đạt mốc định mức chuẩn 160 tiết trước khi chuyển sang phân bổ cho giảng viên tiếp theo. Chiến lược này giúp tối ưu hóa định mức lao động khoa học của đội ngũ giảng viên cơ hữu chủ chốt.
--   **Chiến lược B - Cân bằng tải (Load Balancing):** Hệ thống phân phối đều số tiết giảng dạy cho toàn bộ danh sách giảng viên khả dụng, đảm bảo không có sự chênh lệch quá lớn về khối lượng công việc trong khoa.
--   **Cảnh báo xung đột trực quan:** Đối với các trường hợp vi phạm ràng buộc mềm (như vượt quá 250 tiết hoặc dạy cùng môn quá 6 lớp), hệ thống sẽ không dừng chạy thuật toán mà sẽ ghi nhận cảnh báo và phản hồi về giao diện Frontend để cán bộ có phương án xử lý thủ công.
--   **`O_FILL_FALLBACK` (Cơ chế gỡ lỗi mềm):** Nếu một dòng lịch học hoàn toàn không tìm thấy giảng viên chính nào thỏa mãn các ràng buộc cứng, thuật toán sẽ bỏ trống trường giảng viên và đánh dấu nhãn *"Hết giảng viên chính khả dụng"* để giáo vụ khoa dễ dàng nhận diện điểm nghẽn của dữ liệu nguồn.
+1. **Ưu tiên theo Chiến lược gán**:
+   * **Chiến lược A - Bão hòa (Saturation)**: Hệ thống tối ưu hóa bằng cách điền đầy định mức giờ chuẩn là $160$ tiết (`TARGET_HOURS = 160`) cho một giảng viên trước khi chuyển sang giảng viên tiếp theo.
+     $$\text{Score} = \text{Tổng số giờ đã gán hiện tại (nếu } < 160)$$
+     Nếu giảng viên đã đạt mốc định mức tối thiểu $160$ tiết, họ sẽ bị phạt nặng $-5,000$ điểm để thuật toán ưu tiên chọn những giảng viên chưa đủ định mức.
+   * **Chiến lược B - Cân bằng tải (Load Balancing)**: Hệ thống ưu tiên giảng viên có số giờ giảng dạy tích lũy thấp nhất nhằm phân phối đều tải công việc trong toàn Khoa.
+     $$\text{Score} = -\text{Tổng số giờ đã gán hiện tại}$$
+2. **Phạt nặng vượt tải tối đa (`O_MAX_HOURS_250`)**: Nhằm bảo vệ sức khỏe và chất lượng giảng dạy, hệ thống áp đặt trần giờ giảng trần mềm là $250$ tiết (`SOFT_MAX_HOURS = 250`). Nếu việc gán thêm học phần làm số giờ dự kiến vượt quá $250$ tiết, phương án gán sẽ bị phạt cực nặng $-10,000$ điểm.
+3. **Phạt tránh mệt mỏi bài giảng (`O_SUBJECT_FATIGUE`)**: Nhằm tránh sự mệt mỏi khi giảng dạy lặp đi lặp lại cùng một nội dung, một giảng viên không nên dạy quá $6$ lớp cho cùng một học phần (`MAX_SAME_SUBJECT_CLASSES = 6`). Nếu vượt quá, điểm số của phương án gán sẽ bị trừ $-2,000$ điểm.
+4. **Ưu tiên ghép cặp giảng viên thực hành (`O_PRAC_CO_ASSIGN`)**: Với các học phần có giờ thực hành và có giảng viên thực hành đăng ký nguyện vọng, hệ thống sẽ thực hiện gọi hàm `_find_best_prac` để đồng thời tìm và ghép cặp giảng viên thực hành tối ưu nhất dựa trên cùng tiêu chí tính điểm giờ dạy.
+
+#### D. Đầu ra của thuật toán (Output)
+Sau khi tính toán điểm số Heuristic cho tất cả các kết hợp hợp lệ, động cơ phân công sẽ đưa ra kết quả đầu ra:
+1. **Cập nhật thời khóa biểu tối ưu (Optimal Timetable Assignment)**: Cập nhật trực tiếp mã định danh của giảng viên chính (`main_lecturer_id`), giảng viên thực hành (`prac_lecturer_id`) và buổi học được xếp (`morning_day` / `afternoon_day`) vào bảng cơ sở dữ liệu `TimetableRow`.
+2. **Cơ chế dự phòng để trống (`O_FILL_FALLBACK`)**: Trong trường hợp dữ liệu nguồn bị nghẽn (không có giảng viên nào đăng ký học phần hoặc tất cả các giảng viên đăng ký đều vi phạm ràng buộc cứng về lịch trùng hay quá tải giới hạn), động cơ sẽ giữ nguyên trạng thái trống của giảng viên và ghi nhận cảnh báo *"Hết giảng viên chính khả dụng"*.
+3. **Bảng thống kê và cảnh báo vi phạm (Warnings & Violations Dashboard)**: Toàn bộ các vi phạm về ràng buộc mềm (giảng viên vượt quá $250$ tiết, dạy một học phần quá $6$ lớp) hoặc các cảnh báo thiếu giảng viên đều được lưu trữ vào đối tượng `AssignmentResult` và phản hồi trực quan về giao diện quản trị viên (Frontend) dưới dạng các cảnh báo chuông và highlight, giúp cán bộ giáo vụ nhanh chóng phát hiện và xử lý thủ công các trường hợp đặc biệt.
 
 ---
 

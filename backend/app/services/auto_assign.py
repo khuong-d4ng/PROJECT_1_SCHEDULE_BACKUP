@@ -17,6 +17,9 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Set, Optional, Tuple
 
 # Available day slots
+# =====================================================================
+# SECTION 1: CẤU HÌNH HẰNG SỐ & CẤU TRÚC DỮ LIỆU ĐẦU RA (CONSTANTS & DATA STRUCTURES)
+# =====================================================================
 DAYS = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7']
 
 TARGET_HOURS = 160
@@ -34,6 +37,9 @@ class AssignmentResult:
     slot_assigned_count: int = 0
 
 
+# =====================================================================
+# SECTION 2: KHỞI TẠO & NẠP DỮ LIỆU BỘ NHỚ (INITIALIZATION & DATA LOADING)
+# =====================================================================
 class AutoAssigner:
     def __init__(self, session_id: int, db: Session, strategy: str = "A"):
         self.session_id = session_id
@@ -54,23 +60,6 @@ class AutoAssigner:
         # Slot occupancy tracking
         self.class_slots: Dict[str, Set[str]] = defaultdict(set)  # class_name -> set of occupied slots ("S-T2", etc.)
         self.lec_slots: Dict[int, Set[str]] = defaultdict(set)    # lecturer_id -> set of occupied slots
-
-    def run(self) -> AssignmentResult:
-        self._load_data()
-        result = AssignmentResult()
-
-        # Process rows that need assignment (no main_lecturer_id yet)
-        unassigned_rows = [r for r in self.rows if r.main_lecturer_id is None]
-        
-        for row in unassigned_rows:
-            success = self._assign_row(row, result)
-            if success:
-                result.assigned_count += 1
-            else:
-                result.unassigned_count += 1
-
-        self.db.commit()
-        return result
 
     def _load_data(self):
         """Load all necessary data from DB into memory."""
@@ -135,6 +124,26 @@ class AutoAssigner:
                 if r.prac_lecturer_id and slot:
                     self.lec_slots[r.prac_lecturer_id].add(slot)
 
+    # =====================================================================
+    # SECTION 3: VÒNG LẶP CHÍNH CỦA THUẬT TOÁN (MAIN ASSIGNMENT LOOP)
+    # =====================================================================
+    def run(self) -> AssignmentResult:
+        self._load_data()
+        result = AssignmentResult()
+
+        # Process rows that need assignment (no main_lecturer_id yet)
+        unassigned_rows = [r for r in self.rows if r.main_lecturer_id is None]
+        
+        for row in unassigned_rows:
+            success = self._assign_row(row, result)
+            if success:
+                result.assigned_count += 1
+            else:
+                result.unassigned_count += 1
+
+        # Do not commit, let the API endpoint handle transactions
+        return result
+
     def _assign_row(self, row: models.TimetableRow, result: AssignmentResult) -> bool:
         """Try to assign a lecturer + slot to a single row. Returns True if successful."""
         subj = self.subject_cache.get(row.subject_id)
@@ -179,6 +188,9 @@ class AutoAssigner:
                 continue
 
             for lec_id in main_candidates:
+                # =====================================================================
+                # SECTION 4: KIỂM TRA CÁC RÀNG BUỘC CỨNG (HARD CONSTRAINT CHECKS)
+                # =====================================================================
                 # --- HARD CONSTRAINT CHECKS ---
                 # C_LEC_OVERLAP
                 if slot in self.lec_slots[lec_id]:
@@ -192,6 +204,9 @@ class AutoAssigner:
                 if len(future_classes) > MAX_CLASSES_MAIN:
                     continue
 
+                # =====================================================================
+                # SECTION 5: ĐÁNH GIÁ & CHẤM ĐIỂM
+                # =====================================================================
                 # --- SCORE (Soft Constraints) ---
                 score = self._score_lecturer(lec_id, row.subject_id, th, ph, has_prac_candidates)
 
@@ -212,6 +227,9 @@ class AutoAssigner:
             )
             return False
 
+        # =====================================================================
+        # SECTION 6: ÁP DỤNG KẾT QUẢ & CẢNH BÁO VI PHẠM (APPLYING DECISIONS & WARNINGS)
+        # =====================================================================
         # --- APPLY ASSIGNMENT ---
         slot, main_id, prac_id = best_combo
         
@@ -259,6 +277,9 @@ class AutoAssigner:
 
         return True
 
+    # =====================================================================
+    # HÀM BỔ TRỢ CHẤM ĐIỂM GIẢNG VIÊN CHÍNH (MAIN LECTURER SCORING METHOD)
+    # =====================================================================
     def _score_lecturer(self, lec_id: int, subject_id: int, 
                         theory_h: int, prac_h: int, has_prac: bool) -> float:
         """Score a lecturer candidate. Higher = better."""
@@ -293,6 +314,9 @@ class AutoAssigner:
 
         return score
 
+    # =====================================================================
+    # HÀM BỔ TRỢ CHỌN GIẢNG VIÊN THỰC HÀNH TỐT NHẤT (PRACTICAL LECTURER SELECTION METHOD)
+    # =====================================================================
     def _find_best_prac(self, prac_candidates: List[int], slot: str, prac_hours: int) -> Optional[int]:
         """Find the best practical lecturer for a given slot."""
         best_id = None

@@ -211,6 +211,7 @@ class SessionEntry(Base):
     session_id = Column(Integer, ForeignKey("scheduling_sessions.session_id", ondelete="CASCADE"), nullable=False)
     program_id = Column(Integer, ForeignKey("training_programs.id", ondelete="CASCADE"), nullable=False)
     semester_index = Column(Integer, nullable=False)
+    batch = Column(String(10), nullable=True)
     
     session = relationship("SchedulingSession", back_populates="entries")
 

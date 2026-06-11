@@ -87,17 +87,75 @@ export default function TimetableCenterPage() {
   const [sessions, setSessions] = useState<any[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<number | null>(null);
   const [rows, setRows] = useState<any[]>([]);
+  const [hasChanges, setHasChanges] = useState<boolean>(false);
+  const [saveLoading, setSaveLoading] = useState<boolean>(false);
 
   // Sidebar
   const [lecturers, setLecturers] = useState<any[]>([]);
-  const [statsMap, setStatsMap] = useState<Record<string, LecStats>>({});
   const [lecSearch, setLecSearch] = useState('');
+
+  // Real-time local stats calculation to track lecturer hours and load dynamically at 60 FPS in memory
+  const statsMap = useMemo(() => {
+    const lecData: Record<string, { hours: number; subjects: Set<number>; classes: Set<string>; slots: Set<string> }> = {};
+    
+    const getLec = (id: number) => {
+      const key = String(id);
+      if (!lecData[key]) {
+        lecData[key] = {
+          hours: 0,
+          subjects: new Set<number>(),
+          classes: new Set<string>(),
+          slots: new Set<string>()
+        };
+      }
+      return lecData[key];
+    };
+
+    rows.forEach(r => {
+      const theoryH = r.theory_hours || 0;
+      const practiceH = r.practice_hours || 0;
+      const slot = r.morning_day || r.afternoon_day || null;
+      
+      const mainId = r.main_lecturer_id;
+      const pracId = r.prac_lecturer_id;
+      
+      if (mainId) {
+        const md = getLec(mainId);
+        if (r.subject_id) md.subjects.add(r.subject_id);
+        if (r.class_name) md.classes.add(r.class_name);
+        if (slot) md.slots.add(slot);
+        
+        if (pracId) {
+          md.hours += theoryH;
+          const pd = getLec(pracId);
+          pd.hours += practiceH;
+          if (r.subject_id) pd.subjects.add(r.subject_id);
+          if (r.class_name) pd.classes.add(r.class_name);
+          if (slot) pd.slots.add(slot);
+        } else {
+          md.hours += theoryH + practiceH;
+        }
+      }
+    });
+
+    const result: Record<string, LecStats> = {};
+    Object.entries(lecData).forEach(([lid, d]) => {
+      result[lid] = {
+        hours: d.hours,
+        subjects: d.subjects.size,
+        classes: d.classes.size,
+        slots: d.slots.size
+      };
+    });
+    return result;
+  }, [rows]);
   // Pool filters
   const [poolTypeFilter, setPoolTypeFilter] = useState<string>('all'); // 'all' | 'Cơ hữu' | 'Thỉnh giảng'
   const [poolRoleFilter, setPoolRoleFilter] = useState<string>('all'); // 'all' | 'LT' | 'TH'
   const [poolSortAsc, setPoolSortAsc] = useState(true);
   const [activeLecturer, setActiveLecturer] = useState<any>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [classesList, setClassesList] = useState<any[]>([]);
 
   // Preference map: subject_id -> {main: [lec_ids], prac: [lec_ids]}
   const [prefMap, setPrefMap] = useState<Record<string, { main: number[], prac: number[] }>>({});
@@ -222,12 +280,22 @@ export default function TimetableCenterPage() {
     try { const res = await apiClient.get('/lecturers/'); setLecturers(res.data); } catch { }
   };
 
-  const fetchStats = async (sessionId: number) => {
+  const fetchClasses = async () => {
     try {
-      const res = await apiClient.get(`/timetables/${sessionId}/stats`);
-      setStatsMap(res.data);
+      const res = await apiClient.get('/classes/');
+      setClassesList(res.data);
     } catch { }
   };
+
+  const uniqueBatches = useMemo(() => {
+    const batches = new Set<string>();
+    classesList.forEach(c => {
+      if (c.batch) {
+        batches.add(c.batch);
+      }
+    });
+    return Array.from(batches).sort();
+  }, [classesList]);
 
   const fetchPrefMap = async (sessionId: number) => {
     try {
@@ -241,6 +309,7 @@ export default function TimetableCenterPage() {
     fetchRegLists();
     fetchPrograms();
     fetchLecturers();
+    fetchClasses();
   }, []);
 
   const loadSessionDetails = async (id: number) => {
@@ -249,7 +318,6 @@ export default function TimetableCenterPage() {
       setRows(res.data);
       setSelectedSessionId(id);
       setFocusedSubjectId(null);
-      fetchStats(id);
       fetchPrefMap(id);
     } catch { message.error("Lỗi tải chi tiết TKB"); }
   };
@@ -262,7 +330,7 @@ export default function TimetableCenterPage() {
     }
     const newConfig = { ...entriesConfig };
     wizardConfig.program_ids.forEach(p_id => {
-      if (!newConfig[p_id]) newConfig[p_id] = [{ semester_index: 1 }];
+      if (!newConfig[p_id]) newConfig[p_id] = [{ semester_index: 1, batch: null }];
     });
     setEntriesConfig(newConfig);
     setCurrentStep(1);
@@ -270,7 +338,7 @@ export default function TimetableCenterPage() {
 
   const handleAddEntry = (p_id: number) => {
     const list = [...entriesConfig[p_id]];
-    list.push({ semester_index: 1 });
+    list.push({ semester_index: 1, batch: null });
     setEntriesConfig({ ...entriesConfig, [p_id]: list });
   };
 
@@ -286,7 +354,11 @@ export default function TimetableCenterPage() {
       Object.keys(entriesConfig).forEach(p_id => {
         entriesConfig[p_id].forEach((cfg: any) => {
           if (cfg.semester_index) {
-            payloadEntries.push({ program_id: parseInt(p_id), semester_index: cfg.semester_index });
+            payloadEntries.push({
+              program_id: parseInt(p_id),
+              semester_index: cfg.semester_index,
+              batch: cfg.batch || null
+            });
           }
         });
       });
@@ -309,28 +381,36 @@ export default function TimetableCenterPage() {
   };
 
   // --- ROW UPDATE ---
-  const handleRowChange = async (row_id: number, field: string, value: any) => {
-    try {
-      // Build local update object
-      const localUpdate: any = { [field]: value };
-      // When clearing a lecturer, also clear the display name
-      if (field === 'main_lecturer_id' && value === null) {
+  const handleRowChange = (row_id: number, field: string, value: any) => {
+    // Build local update object
+    const localUpdate: any = { [field]: value };
+    // When clearing a lecturer, also clear the display name; when assigning, set the full name
+    if (field === 'main_lecturer_id') {
+      if (value === null) {
         localUpdate.main_lecturer_name = null;
+      } else {
+        const found = lecturers.find(l => l.lecturer_id === value);
+        localUpdate.main_lecturer_name = found ? found.full_name : null;
       }
-      if (field === 'prac_lecturer_id' && value === null) {
+    }
+    if (field === 'prac_lecturer_id') {
+      if (value === null) {
         localUpdate.prac_lecturer_name = null;
+      } else {
+        const found = lecturers.find(l => l.lecturer_id === value);
+        localUpdate.prac_lecturer_name = found ? found.full_name : null;
       }
+    }
 
-      const updatedRows = rows.map(r => r.row_id === row_id ? { ...r, ...localUpdate } : r);
-      setRows(updatedRows);
-      await apiClient.put(`/timetables/rows/${row_id}`, { [field]: value });
-      if (field === 'main_lecturer_id' || field === 'prac_lecturer_id') {
-        fetchStats(selectedSessionId!);
-      }
-      if (field === 'end_date') {
-        fetchSessions();
-      }
-    } catch { message.error("Lỗi cập nhật dòng TKB"); }
+    setRows(prevRows =>
+      prevRows.map(r => {
+        if (r.row_id === row_id) {
+          return { ...r, ...localUpdate };
+        }
+        return r;
+      })
+    );
+    setHasChanges(true);
   };
 
   // --- DND ---
@@ -350,18 +430,58 @@ export default function TimetableCenterPage() {
 
     const lecId = lec.lecturer_id;
     handleRowChange(rowId, field, lecId);
+  };
 
-    // Update local row state for immediate visual feedback
-    setRows(prev => prev.map(r => {
-      if (r.row_id === rowId) {
-        return {
-          ...r,
-          [field]: lecId,
-          [field === 'main_lecturer_id' ? 'main_lecturer_name' : 'prac_lecturer_name']: lec.full_name
-        };
-      }
-      return r;
-    }));
+  // --- SAVE & GO BACK ---
+  const handleSaveAll = async () => {
+    if (!selectedSessionId) return;
+    setSaveLoading(true);
+    try {
+      const payload = rows.map(r => ({
+        row_id: r.row_id,
+        fixed_shift: r.fixed_shift || null,
+        room_type: r.room_type || null,
+        morning_day: r.morning_day || null,
+        afternoon_day: r.afternoon_day || null,
+        main_lecturer_id: r.main_lecturer_id || null,
+        prac_lecturer_id: r.prac_lecturer_id || null,
+        start_date: r.start_date ? dayjs(r.start_date).format('YYYY-MM-DD') : null,
+        end_date: r.end_date ? dayjs(r.end_date).format('YYYY-MM-DD') : null,
+      }));
+
+      await apiClient.post(`/timetables/${selectedSessionId}/save-rows`, payload);
+      message.success("Đã lưu thành công toàn bộ thay đổi vào database!");
+      setHasChanges(false);
+      
+      // Refresh sessions
+      await fetchSessions();
+    } catch (e: any) {
+      message.error(e.response?.data?.detail || "Lỗi lưu dữ liệu thời khóa biểu");
+    } finally {
+      setSaveLoading(false);
+    }
+  };
+
+  const handleGoBack = () => {
+    if (hasChanges) {
+      Modal.confirm({
+        title: 'Xác nhận quay lại',
+        content: 'Bạn có các thay đổi chưa được lưu. Nếu quay lại, các thay đổi này sẽ bị mất. Bạn vẫn muốn tiếp tục?',
+        okText: 'Quay lại và mất thay đổi',
+        okButtonProps: { danger: true },
+        cancelText: 'Hủy',
+        onOk: () => {
+          setSelectedSessionId(null);
+          setFocusedSubjectId(null);
+          setHasChanges(false);
+          fetchSessions();
+        }
+      });
+    } else {
+      setSelectedSessionId(null);
+      setFocusedSubjectId(null);
+      fetchSessions();
+    }
   };
 
   // --- DELETE SESSION ---
@@ -384,16 +504,39 @@ export default function TimetableCenterPage() {
   const handleAutoAssign = async () => {
     setAutoAssignLoading(true);
     try {
+      // 1. Nếu có thay đổi chưa lưu, tự động lưu trước để database đồng bộ!
+      if (hasChanges) {
+        const payload = rows.map(r => ({
+          row_id: r.row_id,
+          fixed_shift: r.fixed_shift || null,
+          room_type: r.room_type || null,
+          morning_day: r.morning_day || null,
+          afternoon_day: r.afternoon_day || null,
+          main_lecturer_id: r.main_lecturer_id || null,
+          prac_lecturer_id: r.prac_lecturer_id || null,
+          start_date: r.start_date ? dayjs(r.start_date).format('YYYY-MM-DD') : null,
+          end_date: r.end_date ? dayjs(r.end_date).format('YYYY-MM-DD') : null,
+        }));
+        await apiClient.post(`/timetables/${selectedSessionId}/save-rows`, payload);
+      }
+
+      // 2. Chạy tự động phân công
       const res = await apiClient.post(
         `/timetables/${selectedSessionId}/auto-assign`,
         null,
         { params: { strategy: autoAssignStrategy } }
       );
+      
+      // Cập nhật state rows cục bộ với danh sách dòng đề xuất từ backend
+      if (res.data.rows) {
+        setRows(res.data.rows);
+      }
+      
+      setHasChanges(true); // Trực tiếp hiện nút "Lưu thay đổi *" !
+      
       setAutoAssignResult(res.data);
       setIsAutoAssignModalOpen(false);
       setIsResultModalOpen(true);
-      // Reload data
-      await loadSessionDetails(selectedSessionId!);
     } catch (e: any) {
       message.error(e.response?.data?.detail || 'Lỗi Auto-Assign');
     } finally {
@@ -628,27 +771,75 @@ export default function TimetableCenterPage() {
             {/* Toolbar */}
             <div style={{ background: 'var(--color-white)', padding: '10px 16px', borderBottom: '1px solid var(--color-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: 'var(--shadow-sm)' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <Button size="small" onClick={() => { setSelectedSessionId(null); setFocusedSubjectId(null); fetchSessions(); }}>← Quay lại</Button>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontWeight: 700, fontSize: '15px', color: 'var(--color-text)' }}>
-                      {curSession?.plan_name}
-                    </span>
+                <Button size="small" onClick={handleGoBack}>← Quay lại</Button>
+                <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0, flexWrap: 'wrap' }}>
+                    <Tooltip title={curSession?.plan_name}>
+                      <span style={{ 
+                        fontWeight: 700, 
+                        fontSize: '15px', 
+                        color: 'var(--color-text)',
+                        maxWidth: '220px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        display: 'inline-block',
+                        verticalAlign: 'middle'
+                      }}>
+                        {curSession?.plan_name}
+                      </span>
+                    </Tooltip>
                     <Tag color={curSession?.status === 'ACTIVE' ? 'green' : 'default'} style={{ margin: 0 }}>{curSession?.status}</Tag>
                     {curSession?.start_date && (
-                      <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                      <span style={{ fontSize: '12px', color: 'var(--color-text-secondary)', whiteSpace: 'nowrap' }}>
                         ({dayjs(curSession.start_date).format('DD/MM/YYYY')} - {curSession.end_date ? dayjs(curSession.end_date).format('DD/MM/YYYY') : '?'})
                       </span>
                     )}
                   </div>
                   {curSession?.description && (
-                    <span style={{ fontSize: '11.5px', color: 'var(--color-text-secondary)', marginTop: '2px' }}>
-                      Ghi chú: {curSession.description}
-                    </span>
+                    <Tooltip title={curSession.description}>
+                      <span style={{ 
+                        fontSize: '11.5px', 
+                        color: 'var(--color-text-secondary)', 
+                        marginTop: '2px',
+                        maxWidth: '350px',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        display: 'inline-block'
+                      }}>
+                        Ghi chú: {curSession.description}
+                      </span>
+                    </Tooltip>
                   )}
                 </div>
               </div>
               <Space>
+                {hasChanges && (
+                  <>
+                    <style>{`
+                      @keyframes savePulse {
+                        0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(250, 140, 22, 0.7); }
+                        70% { transform: scale(1.02); box-shadow: 0 0 0 6px rgba(250, 140, 22, 0); }
+                        100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(250, 140, 22, 0); }
+                      }
+                    `}</style>
+                    <Button
+                      type="primary"
+                      loading={saveLoading}
+                      onClick={handleSaveAll}
+                      style={{
+                        backgroundColor: '#fa8c16',
+                        borderColor: '#fa8c16',
+                        color: '#fff',
+                        fontWeight: 600,
+                        animation: 'savePulse 1.8s infinite ease-in-out',
+                      }}
+                    >
+                      Lưu thay đổi *
+                    </Button>
+                  </>
+                )}
                 <Tooltip title="Xuất file Excel TKB">
                   <Button icon={<DownloadOutlined />} onClick={handleExport} aria-label="Xuất file Excel">
                     Xuất ra Excel
@@ -665,26 +856,35 @@ export default function TimetableCenterPage() {
             </div>
 
             {/* Table */}
-            <div className="flex-1 overflow-auto p-3">
+            <div className="flex-1 overflow-hidden p-3 flex flex-col">
               <Table
                 columns={tableColumns}
                 dataSource={rows}
                 rowKey="row_id"
-                scroll={{ x: 1600, y: 'calc(100vh - 220px)' }}
+                scroll={{ x: 1600, y: 'calc(100vh - 240px)' }}
                 size="small"
                 bordered
                 pagination={false}
                 showSorterTooltip={false}
                 rowClassName={(record) => {
+                  const sId = String(record.subject_id);
+                  const mainPrefs = prefMap[sId]?.main || [];
+                  const pracPrefs = prefMap[sId]?.prac || [];
+                  
+                  const mainError = record.main_lecturer_id !== null && !mainPrefs.includes(record.main_lecturer_id);
+                  const pracError = record.prac_lecturer_id !== null && !pracPrefs.includes(record.prac_lecturer_id);
+                  
                   let cls = '';
-                  if (focusedSubjectId === record.subject_id) {
-                    cls = 'row-focused';
-                  } else if (dragCapableSubjects) {
+                  if (dragCapableSubjects) {
                     if (dragCapableSubjects.has(record.subject_id)) {
                       cls = 'row-drag-capable';
                     } else {
                       cls = 'row-drag-incapable';
                     }
+                  } else if (mainError || pracError) {
+                    cls = 'row-assignment-error';
+                  } else if (focusedSubjectId === record.subject_id) {
+                    cls = 'row-focused';
                   }
                   return cls;
                 }}
@@ -1071,9 +1271,7 @@ export default function TimetableCenterPage() {
 
         {currentStep === 1 && (
           <div className="space-y-6">
-            <div className="bg-yellow-50 p-3 rounded text-sm text-yellow-800 border border-yellow-200">
-              Hệ thống sẽ dựa vào cấu hình dưới đây để nhân chéo với DB (Lấy các lớp của khóa tương ứng, lấy các học phần của học kì đó) và tự sinh (auto-gen) ra một cấu trúc Mảng y hệt file Excel.
-            </div>
+
 
             {wizardConfig.program_ids.map(p_id => {
               const prog = programs.find(p => p.id === p_id);
@@ -1082,7 +1280,23 @@ export default function TimetableCenterPage() {
                   {entriesConfig[p_id]?.map((cfg: any, i: number) => (
                     <Row gutter={16} key={i} className="mb-2">
                       <Col span={10}>
-                        <Select className="w-full" value={cfg.semester_index} onChange={v => updateEntry(p_id, i, 'semester_index', v)} options={[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ label: `Học Kì ${n}`, value: n }))} />
+                        <Select
+                          className="w-full"
+                          placeholder="Chọn Học kỳ"
+                          value={cfg.semester_index}
+                          onChange={v => updateEntry(p_id, i, 'semester_index', v)}
+                          options={[1, 2, 3, 4, 5, 6, 7, 8].map(n => ({ label: `Học Kì ${n}`, value: n }))}
+                        />
+                      </Col>
+                      <Col span={10}>
+                        <Select
+                          className="w-full"
+                          placeholder="Áp dụng cho Khóa"
+                          allowClear
+                          value={cfg.batch || undefined}
+                          onChange={v => updateEntry(p_id, i, 'batch', v || null)}
+                          options={uniqueBatches.map(b => ({ label: `Khóa ${b}`, value: b }))}
+                        />
                       </Col>
                       <Col span={4}>
                         <Button danger type="text" onClick={() => {

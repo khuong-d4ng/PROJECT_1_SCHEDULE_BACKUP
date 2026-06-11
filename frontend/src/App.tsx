@@ -1,5 +1,5 @@
 import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
-import { Button, ConfigProvider, Select, Spin, message, Tag, Table, Popover, Badge, Input, Switch } from 'antd';
+import { Button, ConfigProvider, Select, Spin, message, Tag, Table, Popover, Badge, Input, Switch, Modal, Form } from 'antd';
 import {
   BookOutlined, TeamOutlined, AppstoreOutlined,
   BankOutlined, CalendarOutlined, FormOutlined,
@@ -101,6 +101,31 @@ const DashboardPage = () => {
   const [email, setEmail] = useState<string>('');
   const [receiveEmails, setReceiveEmails] = useState<boolean>(true);
   const [updatingProfile, setUpdatingProfile] = useState(false);
+
+  const [isPasswordModalOpen, setIsPasswordModalOpen] = useState(false);
+  const [passwordFormLoading, setPasswordFormLoading] = useState(false);
+  const [passwordForm] = Form.useForm();
+
+  const handleChangePassword = async () => {
+    try {
+      const values = await passwordForm.validateFields();
+      setPasswordFormLoading(true);
+      
+      await apiClient.post('/auth/change-password', {
+        old_password: values.oldPassword,
+        new_password: values.newPassword,
+      });
+      
+      message.success('Đổi mật khẩu thành công!');
+      setIsPasswordModalOpen(false);
+      passwordForm.resetFields();
+    } catch (err: any) {
+      if (err.errorFields) return; // Validation error
+      message.error(err.response?.data?.detail || 'Lỗi khi đổi mật khẩu');
+    } finally {
+      setPasswordFormLoading(false);
+    }
+  };
 
   const handleUpdateProfile = async (newEmail: string, newReceive: boolean) => {
     setUpdatingProfile(true);
@@ -489,6 +514,23 @@ const DashboardPage = () => {
               loading={updatingProfile}
             />
           </div>
+
+          <div style={{ borderTop: '1px solid #f3f4f6', paddingTop: '12px', marginTop: '4px' }}>
+            <Button 
+              type="default" 
+              onClick={() => setIsPasswordModalOpen(true)}
+              style={{ 
+                width: '100%', 
+                borderRadius: '6px', 
+                color: '#4b5563', 
+                fontWeight: 500,
+                borderColor: '#d9d9d9',
+                boxShadow: '0 1px 2px rgba(0,0,0,0.03)'
+              }}
+            >
+              Đổi mật khẩu
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -734,6 +776,61 @@ const DashboardPage = () => {
               locale={{ emptyText: 'Chưa có lịch dạy nào được phân công' }}
             />
           </div>
+
+          {/* Modal Đổi mật khẩu */}
+          <Modal
+            title={<span style={{ fontWeight: 700 }}>Đổi mật khẩu tài khoản</span>}
+            open={isPasswordModalOpen}
+            onCancel={() => {
+              setIsPasswordModalOpen(false);
+              passwordForm.resetFields();
+            }}
+            onOk={handleChangePassword}
+            confirmLoading={passwordFormLoading}
+            okText="Cập nhật"
+            cancelText="Hủy"
+            destroyOnClose
+          >
+            <Form form={passwordForm} layout="vertical" style={{ marginTop: '16px' }}>
+              <Form.Item
+                name="oldPassword"
+                label="Mật khẩu hiện tại"
+                rules={[{ required: true, message: 'Vui lòng nhập mật khẩu hiện tại' }]}
+              >
+                <Input.Password placeholder="Nhập mật khẩu hiện tại" />
+              </Form.Item>
+
+              <Form.Item
+                name="newPassword"
+                label="Mật khẩu mới"
+                rules={[
+                  { required: true, message: 'Vui lòng nhập mật khẩu mới' },
+                  { min: 6, message: 'Mật khẩu phải chứa ít nhất 6 ký tự' }
+                ]}
+              >
+                <Input.Password placeholder="Tối thiểu 6 ký tự" />
+              </Form.Item>
+
+              <Form.Item
+                name="confirmPassword"
+                label="Xác nhận mật khẩu mới"
+                dependencies={['newPassword']}
+                rules={[
+                  { required: true, message: 'Vui lòng xác nhận mật khẩu mới' },
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value || getFieldValue('newPassword') === value) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(new Error('Mật khẩu xác nhận không khớp!'));
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password placeholder="Nhập lại mật khẩu mới" />
+              </Form.Item>
+            </Form>
+          </Modal>
         </div>
       </Spin>
     );

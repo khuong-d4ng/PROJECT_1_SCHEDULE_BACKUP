@@ -11,6 +11,10 @@ router = APIRouter()
 
 # ---------- Schemas ----------
 
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -75,6 +79,33 @@ def get_me(current_user: models.User = Depends(get_current_user)):
         lecturer_id=lecturer_id,
         full_name=full_name or current_user.username,
     )
+
+@router.post("/change-password")
+def change_password(
+    req: ChangePasswordRequest,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Đổi mật khẩu của người dùng hiện tại."""
+    # 1. Xác thực mật khẩu cũ
+    if not verify_password(req.old_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=400,
+            detail="Mật khẩu hiện tại không chính xác."
+        )
+
+    # 2. Kiểm tra độ dài mật khẩu mới
+    if len(req.new_password) < 6:
+        raise HTTPException(
+            status_code=400,
+            detail="Mật khẩu mới phải chứa ít nhất 6 ký tự."
+        )
+
+    # 3. Cập nhật mật khẩu mới
+    current_user.password_hash = hash_password(req.new_password)
+    db.commit()
+
+    return {"message": "Đổi mật khẩu thành công!"}
 
 @router.post("/seed")
 def seed_default_accounts(db: Session = Depends(get_db)):

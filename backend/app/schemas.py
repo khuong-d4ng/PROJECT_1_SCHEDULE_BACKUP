@@ -186,6 +186,7 @@ class ImportResolveRequest(BaseModel):
 class SessionEntryConfig(BaseModel):
     program_id: int
     semester_index: int
+    batch: Optional[str] = None
 
 class TimetableSessionCreate(BaseModel):
     plan_name: str
@@ -252,6 +253,7 @@ class AutoAssignResult(BaseModel):
     unassigned_count: int
     slot_assigned_count: int = 0
     warnings: List[str] = []
+    rows: Optional[List[TimetableRowResponse]] = None
 
 
 # --- Lecturer Profile Schemas ---

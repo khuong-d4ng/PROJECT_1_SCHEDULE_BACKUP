@@ -87,7 +87,8 @@ def generate_timetable(payload: schemas.TimetableSessionCreate, db: Session = De
             db.add(models.SessionEntry(
                 session_id=new_session.session_id,
                 program_id=entry.program_id,
-                semester_index=entry.semester_index
+                semester_index=entry.semester_index,
+                batch=entry.batch
             ))
             
         # Core Auto-Gen Logic
@@ -106,10 +107,14 @@ def generate_timetable(payload: schemas.TimetableSessionCreate, db: Session = De
                 
             subject_ids = [c.subject_id for c in curriculums]
             
-            # Lấy tất cả Lớp thuộc Chương trình đó
-            classes = db.query(models.Class).filter(
+            # Lấy tất cả Lớp thuộc Chương trình đó + có cùng Khóa (nếu được cấu hình)
+            class_query = db.query(models.Class).filter(
                 models.Class.program_id == entry.program_id
-            ).all()
+            )
+            if entry.batch:
+                class_query = class_query.filter(models.Class.batch == entry.batch)
+                
+            classes = class_query.all()
             
             # Nhân chéo: Lớp x Môn
             for c in classes:
@@ -363,11 +368,44 @@ def auto_assign(session_id: int, strategy: str = "A", db: Session = Depends(get_
     try:
         engine = AutoAssigner(session_id, db, strategy=strategy)
         result = engine.run()
+        
+        # Tạo danh sách các dòng thời khóa biểu từ các mô hình đã phân công
+        row_responses = []
+        for r in engine.rows:
+            subject = r.subject
+            main_lec = r.main_lecturer
+            prac_lec = r.prac_lecturer
+            
+            row_responses.append(schemas.TimetableRowResponse(
+                row_id=r.row_id,
+                class_name=r.class_name,
+                subject_id=r.subject_id,
+                subject_code=subject.subject_code if subject else "",
+                subject_name=subject.subject_name if subject else "",
+                credits=subject.credits if subject else 0,
+                theory_hours=subject.theory_hours if subject else 0,
+                practice_hours=subject.practice_hours if subject else 0,
+                fixed_shift=r.fixed_shift,
+                room_type=r.room_type,
+                morning_day=r.morning_day,
+                afternoon_day=r.afternoon_day,
+                main_lecturer_id=r.main_lecturer_id,
+                prac_lecturer_id=r.prac_lecturer_id,
+                main_lecturer_name=main_lec.full_name if main_lec else None,
+                prac_lecturer_name=prac_lec.full_name if prac_lec else None,
+                start_date=r.start_date,
+                end_date=r.end_date
+            ))
+            
+        # Rollback giao dịch để không lưu trực tiếp vào cơ sở dữ liệu
+        db.rollback()
+        
         return schemas.AutoAssignResult(
             assigned_count=result.assigned_count,
             unassigned_count=result.unassigned_count,
             slot_assigned_count=result.slot_assigned_count,
-            warnings=result.warnings
+            warnings=result.warnings,
+            rows=row_responses
         )
     except Exception as e:
         db.rollback()
